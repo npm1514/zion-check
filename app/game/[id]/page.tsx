@@ -780,40 +780,24 @@ export default function GamePage() {
                 <PlayerHand 
                   cards={currentPlayer.hand || []}
                   onCardMove={(newHand: Card[]) => {
-                    // Handle card rearrangement
                     const gameStateKey = `game-${gameId}`;
                     const storedGameState = localStorage.getItem(gameStateKey);
                     
                     if (storedGameState) {
                       try {
-                        const { 
-                          players: storedPlayers, 
-                          gameStarted: storedGameStarted,
-                          currentTurn: storedCurrentTurn,
-                          deck: storedDeck,
-                          discardPile: storedDiscardPile,
-                          melds: storedMelds,
-                          currentRound: storedCurrentRound
-                        } = JSON.parse(storedGameState);
-                        
-                        const updatedPlayers = storedPlayers.map((player: Player) => 
+                        const gameState = JSON.parse(storedGameState);
+                        const updatedPlayers = gameState.players.map((player: Player) => 
                           player.id === localPlayerId
                             ? { ...player, hand: newHand }
                             : player
                         );
                         
                         const newState = {
-                          players: updatedPlayers,
-                          gameStarted: storedGameStarted,
-                          currentTurn: storedCurrentTurn,
-                          deck: storedDeck,
-                          discardPile: storedDiscardPile,
-                          melds: storedMelds,
-                          currentRound: storedCurrentRound
+                          ...gameState,
+                          players: updatedPlayers
                         };
                         
                         setPlayers(updatedPlayers);
-                        
                         localStorage.setItem(gameStateKey, JSON.stringify(newState));
                         
                         const gameChannel = createGameChannel(gameId);

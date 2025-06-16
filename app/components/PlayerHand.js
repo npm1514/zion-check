@@ -39,8 +39,8 @@ const PlayerHand = ({ cards, onCardMove, onCardSelect }) => {
     // Insert the dragged card at the new position
     newCards.splice(hoverIndex, 0, draggedCard);
     
-    // Send the new order to the parent component
-    onCardMove(newCards.map(card => card.id));
+    // Send the new order to the parent component with full card objects
+    onCardMove(newCards);
   }, [cards, onCardMove]);
   
   // Create an array of drop refs and isOver states
