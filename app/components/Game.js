@@ -57,8 +57,8 @@ const PlayersContainer = styled.div`
 `;
 
 const PlayerCard = styled.div`
-  background: ${props => props.isCurrentPlayer ? 'rgba(46, 204, 113, 0.3)' : 'rgba(255, 255, 255, 0.1)'};
-  border: 2px solid ${props => props.isCurrentPlayer ? '#2ecc71' : 'transparent'};
+  background: ${props => props.$isCurrentPlayer ? 'rgba(46, 204, 113, 0.3)' : 'rgba(255, 255, 255, 0.1)'};
+  border: 2px solid ${props => props.$isCurrentPlayer ? '#2ecc71' : 'transparent'};
   border-radius: 10px;
   padding: 15px;
   min-width: 120px;
@@ -70,7 +70,7 @@ const PlayerCard = styled.div`
   
   p {
     margin: 5px 0;
-    color: ${props => props.isReady ? '#2ecc71' : '#e74c3c'};
+    color: ${props => props.$isReady ? '#2ecc71' : '#e74c3c'};
   }
   
   .cards-count {
@@ -215,6 +215,23 @@ const RoundInfo = styled.div`
   p {
     margin: 5px 0;
     color: #f1c40f;
+  }
+`;
+
+const Tab = styled.button`
+  flex: 1;
+  padding: 1rem;
+  background: ${props => props.$active ? '#3498db' : 'transparent'};
+  color: ${props => props.$active ? '#fff' : '#333'};
+  border: none;
+  font-size: 1.1rem;
+  font-weight: ${props => props.$active ? 'bold' : 'normal'};
+  cursor: pointer;
+  transition: all 0.3s;
+  border-bottom: 2px solid ${props => props.$active ? '#3498db' : '#ddd'};
+  
+  &:hover {
+    background: ${props => props.$active ? '#3498db' : '#f0f0f0'};
   }
 `;
 
@@ -460,8 +477,8 @@ const Game = () => {
           {Object.values(game.players).map(player => (
             <PlayerCard 
               key={player.id} 
-              isCurrentPlayer={player.id === game.currentTurn}
-              isReady={player.isReady}
+              $isCurrentPlayer={player.id === game.currentTurn}
+              $isReady={player.isReady}
             >
               <h3>{player.name} {player.isHost ? '(Host)' : ''}</h3>
               <p>{player.isReady ? 'Ready' : 'Not Ready'}</p>

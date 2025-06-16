@@ -21,8 +21,8 @@ const CardSlot = styled.div`
   min-width: 100px;
   height: 140px;
   border-radius: 10px;
-  border: ${props => props.isOver ? '2px dashed #3498db' : 'none'};
-  background-color: ${props => props.isOver ? 'rgba(52, 152, 219, 0.2)' : 'transparent'};
+  border: ${props => props.$isOver ? '2px dashed #3498db' : 'none'};
+  background-color: ${props => props.$isOver ? 'rgba(52, 152, 219, 0.2)' : 'transparent'};
   transition: all 0.2s;
 `;
 
@@ -74,7 +74,7 @@ const PlayerHand = ({ cards, onCardMove, onCardSelect }) => {
   return (
     <HandContainer>
       {dropTargets.map((target, index) => (
-        <CardSlot key={index} ref={target.dropRef} isOver={target.isOver}>
+        <CardSlot key={index} ref={target.dropRef} $isOver={target.isOver}>
           {index < cards.length && (
             <Card 
               card={cards[index]} 

@@ -11,13 +11,13 @@ const CardContainer = styled.div`
   background-color: white;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
   user-select: none;
-  cursor: ${props => props.isDragging ? 'grabbing' : 'grab'};
-  opacity: ${props => props.isDragging ? 0.5 : 1};
-  transform: ${props => props.isDragging ? 'scale(1.05)' : 'scale(1)'};
+  cursor: ${props => props.$isDragging ? 'grabbing' : 'grab'};
+  opacity: ${props => props.$isDragging ? 0.5 : 1};
+  transform: ${props => props.$isDragging ? 'scale(1.05)' : 'scale(1)'};
   transition: transform 0.2s, box-shadow 0.2s;
   
   &:hover {
-    transform: ${props => props.isDragging ? 'scale(1.05)' : 'translateY(-5px)'};
+    transform: ${props => props.$isDragging ? 'scale(1.05)' : 'translateY(-5px)'};
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
   }
 `;
@@ -99,7 +99,7 @@ const Card = ({ card, index, onCardClick }) => {
     return (
       <JokerCard 
         ref={drag} 
-        isDragging={isDragging} 
+        $isDragging={isDragging} 
         onClick={() => onCardClick(card.id)}
       >
         <JokerText>JOKER</JokerText>
@@ -111,7 +111,7 @@ const Card = ({ card, index, onCardClick }) => {
   return (
     <CardContainer 
       ref={drag} 
-      isDragging={isDragging} 
+      $isDragging={isDragging} 
       onClick={() => onCardClick(card.id)}
     >
       <CardContent color={suitColor[card.suit]}>

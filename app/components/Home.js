@@ -43,17 +43,17 @@ const TabContainer = styled.div`
 const Tab = styled.button`
   flex: 1;
   padding: 1rem;
-  background: ${props => props.active ? '#3498db' : 'transparent'};
-  color: ${props => props.active ? '#fff' : '#333'};
+  background: ${props => props.$active ? '#3498db' : 'transparent'};
+  color: ${props => props.$active ? '#fff' : '#333'};
   border: none;
   font-size: 1.1rem;
-  font-weight: ${props => props.active ? 'bold' : 'normal'};
+  font-weight: ${props => props.$active ? 'bold' : 'normal'};
   cursor: pointer;
   transition: all 0.3s;
-  border-bottom: 2px solid ${props => props.active ? '#3498db' : '#ddd'};
+  border-bottom: 2px solid ${props => props.$active ? '#3498db' : '#ddd'};
   
   &:hover {
-    background: ${props => props.active ? '#3498db' : '#f0f0f0'};
+    background: ${props => props.$active ? '#3498db' : '#f0f0f0'};
   }
 `;
 
@@ -174,13 +174,13 @@ const Home = () => {
       <Card>
         <TabContainer>
           <Tab 
-            active={activeTab === 'create'} 
+            $active={activeTab === 'create'} 
             onClick={() => setActiveTab('create')}
           >
             Create Game
           </Tab>
           <Tab 
-            active={activeTab === 'join'} 
+            $active={activeTab === 'join'} 
             onClick={() => setActiveTab('join')}
           >
             Join Game
