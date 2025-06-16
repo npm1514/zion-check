@@ -267,35 +267,39 @@ export default function GamePage() {
 
   const startGame = () => {
     if (players.every((player: Player) => player.isReady) && players.length >= 2) {
-      // Initialize a standard deck of cards
+      // Initialize two standard decks of cards
       const suits = ['Hearts', 'Diamonds', 'Clubs', 'Spades'];
       const values = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
       const initialDeck: Card[] = [];
       
-      // Create standard cards
-      suits.forEach(suit => {
-        values.forEach(value => {
-          initialDeck.push({
-            id: `${value}-${suit}-${Math.random()}`,
-            suit: suit as 'Hearts' | 'Diamonds' | 'Clubs' | 'Spades',
-            value: value
+      // Create two sets of standard cards
+      for (let deck = 0; deck < 2; deck++) {
+        suits.forEach(suit => {
+          values.forEach(value => {
+            initialDeck.push({
+              id: `${value}-${suit}-${deck}-${Math.random()}`,
+              suit: suit as 'Hearts' | 'Diamonds' | 'Clubs' | 'Spades',
+              value: value
+            });
           });
         });
-      });
+      }
       
-      // Add jokers
-      initialDeck.push({
-        id: `Joker-1-${Math.random()}`,
-        suit: 'Joker',
-        value: 'Joker',
-        isJoker: true
-      });
-      initialDeck.push({
-        id: `Joker-2-${Math.random()}`,
-        suit: 'Joker',
-        value: 'Joker',
-        isJoker: true
-      });
+      // Add four jokers (two from each deck)
+      for (let deck = 0; deck < 2; deck++) {
+        initialDeck.push({
+          id: `Joker-1-${deck}-${Math.random()}`,
+          suit: 'Joker',
+          value: 'Joker',
+          isJoker: true
+        });
+        initialDeck.push({
+          id: `Joker-2-${deck}-${Math.random()}`,
+          suit: 'Joker',
+          value: 'Joker',
+          isJoker: true
+        });
+      }
       
       // Shuffle the deck
       for (let i = initialDeck.length - 1; i > 0; i--) {
@@ -303,10 +307,11 @@ export default function GamePage() {
         [initialDeck[i], initialDeck[j]] = [initialDeck[j], initialDeck[i]];
       }
       
-      // Deal initial hands (10 cards per player)
+      // Deal initial hands based on round number
+      const cardsPerPlayer = currentRound + 5; // 6 cards for round 1, 7 for round 2, etc.
       const updatedPlayers = players.map(player => ({
         ...player,
-        hand: initialDeck.splice(0, 10)
+        hand: initialDeck.splice(0, cardsPerPlayer)
       }));
       
       setGameStarted(true);
@@ -637,7 +642,7 @@ export default function GamePage() {
                 <p className="text-gray-600">Round: {currentRound}/7</p>
               </div>
               <div>
-                <p className="text-gray-600">Contract: {
+                <p className="text-gray-600">Cards: {currentRound + 5} | Contract: {
                   currentRound === 1 ? '2 sets' :
                   currentRound === 2 ? '1 set and 1 run' :
                   currentRound === 3 ? '2 runs' :
