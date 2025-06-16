@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import styled from 'styled-components';
 import { useDrop } from 'react-dnd';
 import Card from './Card';
@@ -26,51 +26,60 @@ const CardSlot = styled.div`
   transition: all 0.2s;
 `;
 
+// Custom hook for creating drop targets
+const useDropTarget = (index, moveCard) => {
+  const [{ isOver }, dropRef] = useDrop({
+    accept: 'CARD',
+    hover: (item) => {
+      if (item.index !== index) {
+        moveCard(item.index, index);
+        item.index = index;
+      }
+    },
+    collect: (monitor) => ({
+      isOver: !!monitor.isOver()
+    })
+  });
+
+  return { isOver, dropRef };
+};
+
 const PlayerHand = ({ cards, onCardMove, onCardSelect }) => {
   // Handle card movement within the hand
   const moveCard = useCallback((dragIndex, hoverIndex) => {
-    // Create a new array with the cards in the new order
     const newCards = [...cards];
     const draggedCard = newCards[dragIndex];
-    
-    // Remove the dragged card from its original position
     newCards.splice(dragIndex, 1);
-    
-    // Insert the dragged card at the new position
     newCards.splice(hoverIndex, 0, draggedCard);
-    
-    // Send the new order to the parent component with full card objects
     onCardMove(newCards);
   }, [cards, onCardMove]);
-  
-  // Create an array of drop refs and isOver states
-  // This approach creates all the hooks at the top level, which follows React's rules
-  const dropTargets = [];
-  
-  // Create one more slot than the number of cards for dragging flexibility
-  for (let i = 0; i < cards.length + 1; i++) {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    const [{ isOver }, dropRef] = useDrop({
-      accept: 'CARD',
-      hover: (item) => {
-        if (item.index !== i) {
-          moveCard(item.index, i);
-          item.index = i;
-        }
-      },
-      collect: (monitor) => ({
-        isOver: !!monitor.isOver()
-      })
-    });
-    
-    dropTargets.push({ dropRef, isOver });
-  }
-  
+
+  // Create fixed number of drop targets (maximum 13 cards)
+  const dropTarget0 = useDropTarget(0, moveCard);
+  const dropTarget1 = useDropTarget(1, moveCard);
+  const dropTarget2 = useDropTarget(2, moveCard);
+  const dropTarget3 = useDropTarget(3, moveCard);
+  const dropTarget4 = useDropTarget(4, moveCard);
+  const dropTarget5 = useDropTarget(5, moveCard);
+  const dropTarget6 = useDropTarget(6, moveCard);
+  const dropTarget7 = useDropTarget(7, moveCard);
+  const dropTarget8 = useDropTarget(8, moveCard);
+  const dropTarget9 = useDropTarget(9, moveCard);
+  const dropTarget10 = useDropTarget(10, moveCard);
+  const dropTarget11 = useDropTarget(11, moveCard);
+  const dropTarget12 = useDropTarget(12, moveCard);
+
+  const dropTargets = [
+    dropTarget0, dropTarget1, dropTarget2, dropTarget3, dropTarget4,
+    dropTarget5, dropTarget6, dropTarget7, dropTarget8, dropTarget9,
+    dropTarget10, dropTarget11, dropTarget12
+  ];
+
   // Handle card selection for playing
-  const handleCardClick = (cardId) => {
+  const handleCardClick = useCallback((cardId) => {
     onCardSelect(cardId);
-  };
-  
+  }, [onCardSelect]);
+
   return (
     <HandContainer>
       {dropTargets.map((target, index) => (
