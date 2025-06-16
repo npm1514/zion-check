@@ -1,10 +1,10 @@
-# Contract Rummy
+# Zion's Check
 
 A multiplayer online card game built with Next.js.
 
 ## Overview
 
-This project is a web-based implementation of Contract Rummy, a popular card game variant. The game allows multiple players to join a game room and play together in real-time.
+This project is a web-based implementation of Zion's Check, a popular card game variant. The game allows multiple players to join a game room and play together in real-time.
 
 ## Features
 
@@ -48,7 +48,7 @@ npm run dev
 
 ## Game Rules
 
-Contract Rummy is played with the following rules:
+Zion's Check is played with the following rules:
 
 - The game consists of 7 rounds with different contracts
 - Each round, players must fulfill the specified contract to go out

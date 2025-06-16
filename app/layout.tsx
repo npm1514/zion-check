@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Contract Rummy - Online Card Game",
-  description: "Play Contract Rummy online with friends. Create or join a game and enjoy this classic card game variant.",
+  title: "Zion's Check - Online Card Game",
+  description: "Play Zion's Check online with friends. Create or join a game and enjoy this classic card game variant.",
 };
 
 export default function RootLayout({

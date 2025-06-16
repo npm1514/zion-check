@@ -3,9 +3,9 @@ import Link from 'next/link';
 export default function RulesPage() {
   return (
     <div className="flex flex-col items-center min-h-screen p-8">
-      <div className="w-full max-w-4xl p-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg">
+      <div className="w-full max-w-4xl p-8 bg-white rounded-xl shadow-lg">
         <div className="mb-8 flex justify-between items-center">
-          <h1 className="text-3xl font-bold">Contract Rummy Rules</h1>
+          <h1 className="text-3xl font-bold">Zion's Check Rules</h1>
           <Link 
             href="/"
             className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
@@ -14,10 +14,10 @@ export default function RulesPage() {
           </Link>
         </div>
         
-        <div className="prose dark:prose-invert max-w-none">
+        <div className="prose max-w-none">
           <h2>Overview</h2>
           <p>
-            Contract Rummy is a variant of Rummy played with 2-6 players. The game consists of 7 rounds, 
+            Zion's Check is a variant of Rummy played with 2-6 players. The game consists of 7 rounds, 
             each with a different "contract" that players must fulfill before they can go out.
           </p>
           

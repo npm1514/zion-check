@@ -169,7 +169,7 @@ const Home = () => {
 
   return (
     <HomeContainer>
-      <Title>Contract Rummy</Title>
+      <Title>Zion's Check</Title>
       
       <Card>
         <TabContainer>
@@ -228,7 +228,7 @@ const Home = () => {
         {error && <ErrorMessage>{error}</ErrorMessage>}
         
         <RulesContainer>
-          <RulesTitle>Contract Rummy Rules</RulesTitle>
+          <RulesTitle>Zion's Check Rules</RulesTitle>
           <RulesList>
             <li>The game consists of 7 rounds with different contracts.</li>
             <li>Each round, players must fulfill the specified contract to go out.</li>

@@ -406,7 +406,7 @@ const Game = () => {
   return (
     <GameContainer>
       <GameHeader>
-        <GameTitle>Contract Rummy</GameTitle>
+        <GameTitle>Zion's Check</GameTitle>
         <GameCode>Game Code: {game.id}</GameCode>
       </GameHeader>
       

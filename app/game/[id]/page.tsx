@@ -4,6 +4,16 @@ import { useEffect, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
+// Define player type
+type Player = {
+  id: string;
+  name: string;
+  isReady: boolean;
+};
+
+// Create a BroadcastChannel for real-time state synchronization
+const createGameChannel = (gameId: string) => new BroadcastChannel(`game-${gameId}`);
+
 // In a real app, this would be managed by a server or database
 // For this demo, we'll use localStorage to persist game state across browser tabs
 export default function GamePage() {
@@ -12,141 +22,117 @@ export default function GamePage() {
   const searchParams = useSearchParams();
   const gameId = params.id as string;
   const playerName = searchParams.get('name') || '';
-  const isHost = searchParams.get('host') === 'true';
   
   const [gameStarted, setGameStarted] = useState(false);
-  const [players, setPlayers] = useState<Array<{id: string; name: string; isHost: boolean; isReady: boolean}>>([]);
-  const [isReady, setIsReady] = useState(isHost);
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [isReady, setIsReady] = useState(false);
   const [copySuccess, setCopySuccess] = useState('');
   const [localPlayerId] = useState(`player-${Date.now()}-${Math.random()}`);
 
   // Initialize game state
   useEffect(() => {
-    // Get current game state from localStorage
+    const gameChannel = createGameChannel(gameId);
     const gameStateKey = `game-${gameId}`;
-    const storedGameState = localStorage.getItem(gameStateKey);
-    
-    if (storedGameState) {
-      try {
-        const { players: storedPlayers, gameStarted: storedGameStarted } = JSON.parse(storedGameState);
-        
-        // Check if current player is already in the game
-        const existingPlayer = storedPlayers.find(p => p.name === playerName);
-        
-        if (!existingPlayer) {
-          // Add current player to the game
-          const updatedPlayers = [
-            ...storedPlayers,
-            { id: localPlayerId, name: playerName, isHost, isReady: isHost }
-          ];
-          
-          setPlayers(updatedPlayers);
-          setGameStarted(storedGameStarted);
-          localStorage.setItem(gameStateKey, JSON.stringify({
-            players: updatedPlayers,
-            gameStarted: storedGameStarted
-          }));
-        } else {
-          // Update existing player's info, preserving or updating host status
-          const updatedPlayers = storedPlayers.map(player => 
-            player.name === playerName 
-              ? { ...player, id: localPlayerId, isHost: isHost || player.isHost }
-              : player
-          );
-          
-          setPlayers(updatedPlayers);
-          setGameStarted(storedGameStarted);
-          setIsReady(updatedPlayers.find(p => p.name === playerName)?.isReady || isHost);
-          
-          localStorage.setItem(gameStateKey, JSON.stringify({
-            players: updatedPlayers,
-            gameStarted: storedGameStarted
-          }));
+
+    // Function to broadcast game state changes
+    const broadcastGameState = (newPlayers: Player[], newGameStarted: boolean) => {
+      gameChannel.postMessage({
+        type: 'GAME_STATE_UPDATE',
+        payload: {
+          players: newPlayers,
+          gameStarted: newGameStarted
         }
-      } catch (e) {
-        console.error('Error parsing stored game state:', e);
-        // If there's an error, create new game state
-        const initialPlayers = [{ id: localPlayerId, name: playerName, isHost, isReady: isHost }];
-        setPlayers(initialPlayers);
+      });
+    };
+
+    // Function to handle player join
+    const handlePlayerJoin = () => {
+      const storedGameState = localStorage.getItem(gameStateKey);
+      let updatedPlayers: Player[];
+      
+      if (storedGameState) {
+        try {
+          const { players: storedPlayers, gameStarted: storedGameStarted } = JSON.parse(storedGameState);
+          const existingPlayer = storedPlayers.find((p: Player) => p.name === playerName);
+          
+          if (!existingPlayer) {
+            updatedPlayers = [
+              ...storedPlayers,
+              { id: localPlayerId, name: playerName, isReady: false }
+            ];
+          } else {
+            updatedPlayers = storedPlayers.map((player: Player) => 
+              player.name === playerName 
+                ? { ...player, id: localPlayerId }
+                : player
+            );
+          }
+          
+          setPlayers(updatedPlayers);
+          setGameStarted(storedGameStarted);
+          setIsReady(updatedPlayers.find((p: Player) => p.name === playerName)?.isReady || false);
+        } catch (e) {
+          console.error('Error parsing stored game state:', e);
+          updatedPlayers = [{ id: localPlayerId, name: playerName, isReady: false }];
+          setPlayers(updatedPlayers);
+        }
+      } else {
+        updatedPlayers = [{ id: localPlayerId, name: playerName, isReady: false }];
+        setPlayers(updatedPlayers);
+      }
+
+      // Store and broadcast the updated state
+      localStorage.setItem(gameStateKey, JSON.stringify({
+        players: updatedPlayers,
+        gameStarted
+      }));
+      broadcastGameState(updatedPlayers, gameStarted);
+    };
+
+    // Listen for game state updates from other windows
+    const handleGameStateUpdate = (event: MessageEvent) => {
+      if (event.data.type === 'GAME_STATE_UPDATE') {
+        const { players: newPlayers, gameStarted: newGameStarted } = event.data.payload;
+        setPlayers(newPlayers);
+        setGameStarted(newGameStarted);
+        setIsReady(newPlayers.find((p: Player) => p.name === playerName)?.isReady || false);
         localStorage.setItem(gameStateKey, JSON.stringify({
-          players: initialPlayers,
-          gameStarted: false
+          players: newPlayers,
+          gameStarted: newGameStarted
         }));
       }
-    } else {
-      // Create new game state
-      const initialPlayers = [{ id: localPlayerId, name: playerName, isHost, isReady: isHost }];
-      setPlayers(initialPlayers);
-      localStorage.setItem(gameStateKey, JSON.stringify({
-        players: initialPlayers,
-        gameStarted: false
-      }));
-    }
-    
-    // Set up polling to check for game state changes
-    const pollInterval = setInterval(() => {
-      const currentGameState = localStorage.getItem(gameStateKey);
-      if (currentGameState) {
-        try {
-          const { players: currentPlayers, gameStarted: currentGameStarted } = JSON.parse(currentGameState);
-          
-          // Update local state if there are changes
-          setPlayers(prevPlayers => {
-            const prevPlayerNames = prevPlayers.map(p => `${p.name}-${p.isHost}-${p.isReady}`).sort();
-            const currentPlayerNames = currentPlayers.map(p => `${p.name}-${p.isHost}-${p.isReady}`).sort();
-            
-            if (JSON.stringify(prevPlayerNames) !== JSON.stringify(currentPlayerNames)) {
-              return currentPlayers;
-            }
-            return prevPlayers;
-          });
-          
-          setGameStarted(prevGameStarted => {
-            if (prevGameStarted !== currentGameStarted) {
-              return currentGameStarted;
-            }
-            return prevGameStarted;
-          });
-          
-          // Update local ready state if it changed
-          const currentPlayer = currentPlayers.find(p => p.name === playerName);
-          if (currentPlayer) {
-            setIsReady(currentPlayer.isReady);
-          }
-        } catch (e) {
-          console.error('Error parsing current game state:', e);
-        }
-      }
-    }, 1000);
-    
+    };
+
+    // Initial player join
+    handlePlayerJoin();
+
+    // Set up message listener
+    gameChannel.addEventListener('message', handleGameStateUpdate);
+
     // Cleanup on unmount
     return () => {
-      clearInterval(pollInterval);
+      gameChannel.removeEventListener('message', handleGameStateUpdate);
       
-      // Remove player from game when leaving (unless they're the host and it's not a page refresh)
-      const handleBeforeUnload = () => {
-        if (!isHost) {
-          const finalGameState = localStorage.getItem(gameStateKey);
-          if (finalGameState) {
-            try {
-              const { players: finalPlayers, gameStarted: finalGameStarted } = JSON.parse(finalGameState);
-              const updatedPlayers = finalPlayers.filter(p => p.id !== localPlayerId && p.name !== playerName);
-              
-              localStorage.setItem(gameStateKey, JSON.stringify({
-                players: updatedPlayers,
-                gameStarted: finalGameStarted
-              }));
-            } catch (e) {
-              console.error('Error updating final game state:', e);
-            }
-          }
+      // Remove player from game when leaving
+      const finalGameState = localStorage.getItem(gameStateKey);
+      if (finalGameState) {
+        try {
+          const { players: finalPlayers, gameStarted: finalGameStarted } = JSON.parse(finalGameState);
+          const updatedPlayers = finalPlayers.filter((p: Player) => p.id !== localPlayerId && p.name !== playerName);
+          
+          localStorage.setItem(gameStateKey, JSON.stringify({
+            players: updatedPlayers,
+            gameStarted: finalGameStarted
+          }));
+          broadcastGameState(updatedPlayers, finalGameStarted);
+        } catch (e) {
+          console.error('Error updating final game state:', e);
         }
-      };
+      }
       
-      window.addEventListener('beforeunload', handleBeforeUnload);
-      return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+      gameChannel.close();
     };
-  }, [gameId, isHost, playerName, localPlayerId]);
+  }, [gameId, playerName, localPlayerId]);
 
   const copyGameCode = () => {
     navigator.clipboard.writeText(gameId);
@@ -158,14 +144,13 @@ export default function GamePage() {
     const newReadyState = !isReady;
     setIsReady(newReadyState);
     
-    // Update player ready state in localStorage
     const gameStateKey = `game-${gameId}`;
     const storedGameState = localStorage.getItem(gameStateKey);
     
     if (storedGameState) {
       try {
         const { players: storedPlayers, gameStarted: storedGameStarted } = JSON.parse(storedGameState);
-        const updatedPlayers = storedPlayers.map(player => 
+        const updatedPlayers = storedPlayers.map((player: Player) => 
           player.name === playerName
             ? { ...player, isReady: newReadyState }
             : player
@@ -176,6 +161,17 @@ export default function GamePage() {
           players: updatedPlayers,
           gameStarted: storedGameStarted
         }));
+
+        // Broadcast the updated state
+        const gameChannel = createGameChannel(gameId);
+        gameChannel.postMessage({
+          type: 'GAME_STATE_UPDATE',
+          payload: {
+            players: updatedPlayers,
+            gameStarted: storedGameStarted
+          }
+        });
+        gameChannel.close();
       } catch (e) {
         console.error('Error updating ready state:', e);
       }
@@ -183,10 +179,9 @@ export default function GamePage() {
   };
 
   const startGame = () => {
-    if (isHost && players.every(player => player.isReady)) {
+    if (players.every((player: Player) => player.isReady) && players.length >= 2) {
       setGameStarted(true);
       
-      // Update game started state in localStorage
       const gameStateKey = `game-${gameId}`;
       const storedGameState = localStorage.getItem(gameStateKey);
       
@@ -197,16 +192,23 @@ export default function GamePage() {
             players: storedPlayers,
             gameStarted: true
           }));
+
+          // Broadcast the updated state
+          const gameChannel = createGameChannel(gameId);
+          gameChannel.postMessage({
+            type: 'GAME_STATE_UPDATE',
+            payload: {
+              players: storedPlayers,
+              gameStarted: true
+            }
+          });
+          gameChannel.close();
         } catch (e) {
           console.error('Error updating game started state:', e);
         }
       }
     }
   };
-
-  // Get current player info
-  const currentPlayer = players.find(p => p.name === playerName);
-  const isCurrentPlayerHost = currentPlayer?.isHost || isHost;
 
   if (!playerName) {
     return (
@@ -228,20 +230,20 @@ export default function GamePage() {
   if (gameStarted) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-8">
-        <div className="w-full max-w-4xl p-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg">
+        <div className="w-full max-w-4xl p-8 bg-white rounded-xl shadow-lg">
           <h1 className="text-3xl font-bold text-center mb-8">Game in Progress</h1>
           
           <div className="flex justify-between mb-8">
             <div>
               <h2 className="text-xl font-semibold mb-2">Game Code: {gameId}</h2>
-              <p className="text-gray-600 dark:text-gray-300">Round: 1/7</p>
+              <p className="text-gray-600">Round: 1/7</p>
             </div>
             <div>
-              <p className="text-gray-600 dark:text-gray-300">Contract: 2 sets</p>
+              <p className="text-gray-600">Contract: 2 sets</p>
             </div>
           </div>
           
-          <div className="bg-green-100 dark:bg-green-900 p-8 rounded-lg mb-8 text-center">
+          <div className="bg-green-100 p-8 rounded-lg mb-8 text-center">
             <p className="text-xl">Game board will be implemented here</p>
           </div>
           
@@ -251,11 +253,11 @@ export default function GamePage() {
                 key={player.id}
                 className={`p-4 rounded-lg ${
                   player.name === playerName 
-                    ? 'bg-indigo-100 dark:bg-indigo-900' 
-                    : 'bg-gray-100 dark:bg-gray-700'
+                    ? 'bg-indigo-100' 
+                    : 'bg-gray-100'
                 }`}
               >
-                <p className="font-semibold">{player.name} {player.isHost ? '(Host)' : ''}</p>
+                <p className="font-semibold">{player.name}</p>
                 <p>Cards: 10</p>
               </div>
             ))}
@@ -267,7 +269,7 @@ export default function GamePage() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-8">
-      <div className="w-full max-w-md p-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg">
+      <div className="w-full max-w-md p-8 bg-white rounded-xl shadow-lg">
         <h1 className="text-3xl font-bold text-center mb-8">Game Lobby</h1>
         
         <div className="mb-6">
@@ -283,7 +285,7 @@ export default function GamePage() {
               </button>
             </div>
           </div>
-          <p className="text-gray-600 dark:text-gray-300 text-sm">Share this code with friends to join your game</p>
+          <p className="text-gray-600 text-sm">Share this code with friends to join your game</p>
         </div>
         
         <div className="mb-8">
@@ -293,7 +295,6 @@ export default function GamePage() {
               <div key={player.id} className="flex items-center justify-between">
                 <div>
                   <span className="font-medium">{player.name}</span>
-                  {player.isHost && <span className="ml-2 text-xs text-indigo-600 font-semibold">(Host)</span>}
                   {player.name === playerName && <span className="ml-2 text-xs text-green-600">(You)</span>}
                 </div>
                 <span className={player.isReady ? 'text-green-500 font-medium' : 'text-gray-400'}>
@@ -316,23 +317,21 @@ export default function GamePage() {
             {isReady ? '✓ Ready!' : 'Mark as Ready'}
           </button>
           
-          {isCurrentPlayerHost && (
-            <button
-              onClick={startGame}
-              disabled={!players.every(player => player.isReady) || players.length < 2}
-              className={`w-full px-4 py-3 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition ${
-                players.every(player => player.isReady) && players.length >= 2
-                  ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                  : 'bg-indigo-300 text-white cursor-not-allowed'
-              }`}
-            >
-              {players.length < 2 
-                ? 'Waiting for more players (min 2)' 
-                : !players.every(player => player.isReady)
-                  ? 'Waiting for all players to be ready'
-                  : 'Start Game'}
-            </button>
-          )}
+          <button
+            onClick={startGame}
+            disabled={!players.every(player => player.isReady) || players.length < 2}
+            className={`w-full px-4 py-3 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition ${
+              players.every(player => player.isReady) && players.length >= 2
+                ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                : 'bg-indigo-300 text-white cursor-not-allowed'
+            }`}
+          >
+            {players.length < 2 
+              ? 'Waiting for more players (min 2)' 
+              : !players.every(player => player.isReady)
+                ? 'Waiting for all players to be ready'
+                : 'Start Game'}
+          </button>
           
           <Link 
             href="/"
