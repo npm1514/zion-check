@@ -234,7 +234,7 @@ const Home = () => {
             <li>Each round, players must fulfill the specified contract to go out.</li>
             <li>A set is a group of 3 or 4 cards of the same rank.</li>
             <li>A run is a sequence of 4 or more cards of the same suit.</li>
-            <li>Jokers can be used as wild cards to complete sets or runs.</li>
+            <li>Jokers can be used as wild cards to complete books or runs.</li>
             <li>Points are scored for cards left in opponents' hands.</li>
             <li>The player with the lowest score at the end wins.</li>
           </RulesList>

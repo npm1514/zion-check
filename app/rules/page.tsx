@@ -30,11 +30,11 @@ export default function RulesPage() {
           <h2>The Contracts</h2>
           <p>Each round has a specific contract that must be fulfilled:</p>
           <ol>
-            <li><strong>Round 1:</strong> 2 sets</li>
+            <li><strong>Round 1:</strong> 2 books</li>
             <li><strong>Round 2:</strong> 1 set and 1 run</li>
             <li><strong>Round 3:</strong> 2 runs</li>
-            <li><strong>Round 4:</strong> 3 sets</li>
-            <li><strong>Round 5:</strong> 2 sets and 1 run</li>
+            <li><strong>Round 4:</strong> 3 books</li>
+            <li><strong>Round 5:</strong> 2 books and 1 run</li>
             <li><strong>Round 6:</strong> 1 set and 2 runs</li>
             <li><strong>Round 7:</strong> 3 runs</li>
           </ol>
@@ -52,7 +52,7 @@ export default function RulesPage() {
             <li>On your turn:
               <ul>
                 <li>Draw a card from either the draw pile or the discard pile</li>
-                <li>Play melds (sets or runs) if possible</li>
+                <li>Play melds (books or runs) if possible</li>
                 <li>Discard one card to end your turn</li>
               </ul>
             </li>
@@ -70,7 +70,7 @@ export default function RulesPage() {
           
           <h2>Special Rules</h2>
           <ul>
-            <li>Jokers are wild and can be used to complete sets or runs</li>
+            <li>Jokers are wild and can be used to complete books or runs</li>
             <li>You cannot go out unless you have completed the required contract</li>
             <li>You must discard a card at the end of your turn, even when going out</li>
           </ul>

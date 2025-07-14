@@ -3,6 +3,21 @@ import styled from 'styled-components';
 import { useDrop } from 'react-dnd';
 import Card from './Card';
 
+// Define card type to match the game
+type Card = {
+  id: string;
+  suit: 'Hearts' | 'Diamonds' | 'Clubs' | 'Spades' | 'Joker';
+  value: string | number;
+  isJoker?: boolean;
+};
+
+interface PlayerHandProps {
+  cards: Card[];
+  onCardMove: (cards: Card[]) => void;
+  onCardSelect: (cardId: string) => void;
+  selectedCardIds: string[];
+}
+
 const HandContainer = styled.div`
   display: flex;
   flex-wrap: wrap;
@@ -15,7 +30,7 @@ const HandContainer = styled.div`
   margin-top: 20px;
 `;
 
-const CardSlot = styled.div`
+const CardSlot = styled.div<{ $isOver: boolean }>`
   position: relative;
   margin: 5px;
   min-width: 100px;
@@ -27,10 +42,10 @@ const CardSlot = styled.div`
 `;
 
 // Custom hook for creating drop targets
-const useDropTarget = (index, moveCard) => {
+const useDropTarget = (index: number, moveCard: (dragIndex: number, hoverIndex: number) => void) => {
   const [{ isOver }, dropRef] = useDrop({
     accept: 'CARD',
-    hover: (item) => {
+    hover: (item: { index: number }) => {
       if (item.index !== index) {
         moveCard(item.index, index);
         item.index = index;
@@ -44,11 +59,17 @@ const useDropTarget = (index, moveCard) => {
   return { isOver, dropRef };
 };
 
-const PlayerHand = ({ cards, onCardMove, onCardSelect }) => {
+const PlayerHand: React.FC<PlayerHandProps> = ({ cards, onCardMove, onCardSelect, selectedCardIds = [] }) => {
   // Handle card movement within the hand
-  const moveCard = useCallback((dragIndex, hoverIndex) => {
+  const moveCard = useCallback((dragIndex: number, hoverIndex: number) => {
+    if (dragIndex === hoverIndex) return;
+    if (dragIndex < 0 || dragIndex >= cards.length) return;
+    if (hoverIndex < 0 || hoverIndex >= cards.length) return;
+    
     const newCards = [...cards];
     const draggedCard = newCards[dragIndex];
+    if (!draggedCard) return;
+    
     newCards.splice(dragIndex, 1);
     newCards.splice(hoverIndex, 0, draggedCard);
     onCardMove(newCards);
@@ -76,19 +97,20 @@ const PlayerHand = ({ cards, onCardMove, onCardSelect }) => {
   ];
 
   // Handle card selection for playing
-  const handleCardClick = useCallback((cardId) => {
+  const handleCardClick = useCallback((cardId: string) => {
     onCardSelect(cardId);
   }, [onCardSelect]);
 
   return (
     <HandContainer>
       {dropTargets.map((target, index) => (
-        <CardSlot key={index} ref={target.dropRef} $isOver={target.isOver}>
+        <CardSlot key={index} ref={target.dropRef as any} $isOver={target.isOver}>
           {index < cards.length && (
             <Card 
               card={cards[index]} 
               index={index} 
               onCardClick={handleCardClick}
+              isSelected={selectedCardIds.includes(cards[index]?.id)}
             />
           )}
         </CardSlot>

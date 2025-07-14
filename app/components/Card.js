@@ -15,6 +15,7 @@ const CardContainer = styled.div`
   opacity: ${props => props.$isDragging ? 0.5 : 1};
   transform: ${props => props.$isDragging ? 'scale(1.05)' : 'scale(1)'};
   transition: transform 0.2s, box-shadow 0.2s;
+  border: ${props => props.$isSelected ? '3px solid #3498db' : 'none'};
   
   &:hover {
     transform: ${props => props.$isDragging ? 'scale(1.05)' : 'translateY(-5px)'};
@@ -67,7 +68,10 @@ const JokerText = styled.div`
   color: #333;
 `;
 
-const Card = ({ card, index, onCardClick }) => {
+const Card = ({ card, index, onCardClick, isSelected }) => {
+  // Return null if card is undefined
+  if (!card) return null;
+
   // Map card suits to symbols and colors
   const suitSymbol = {
     'Hearts': '♥',
@@ -88,7 +92,10 @@ const Card = ({ card, index, onCardClick }) => {
   // Configure drag and drop
   const [{ isDragging }, drag] = useDrag({
     type: 'CARD',
-    item: { id: card.id, index },
+    item: () => {
+      if (!card) return { id: null, index };
+      return { id: card.id, index };
+    },
     collect: (monitor) => ({
       isDragging: !!monitor.isDragging()
     })
@@ -99,8 +106,9 @@ const Card = ({ card, index, onCardClick }) => {
     return (
       <JokerCard 
         ref={drag} 
-        $isDragging={isDragging} 
-        onClick={() => onCardClick(card.id)}
+        $isDragging={isDragging}
+        $isSelected={isSelected}
+        onClick={() => onCardClick && card && onCardClick(card.id)}
       >
         <JokerText>JOKER</JokerText>
       </JokerCard>
@@ -111,8 +119,9 @@ const Card = ({ card, index, onCardClick }) => {
   return (
     <CardContainer 
       ref={drag} 
-      $isDragging={isDragging} 
-      onClick={() => onCardClick(card.id)}
+      $isDragging={isDragging}
+      $isSelected={isSelected}
+      onClick={() => onCardClick && card && onCardClick(card.id)}
     >
       <CardContent color={suitColor[card.suit]}>
         <CardCorner>

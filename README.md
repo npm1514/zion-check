@@ -54,7 +54,7 @@ Zion's Check is played with the following rules:
 - Each round, players must fulfill the specified contract to go out
 - A set is a group of 3 or 4 cards of the same rank
 - A run is a sequence of 4 or more cards of the same suit
-- Jokers can be used as wild cards to complete sets or runs
+- Jokers can be used as wild cards to complete books or runs
 - Points are scored for cards left in opponents' hands
 - The player with the lowest score at the end wins
 
@@ -63,7 +63,7 @@ Zion's Check is played with the following rules:
 1. Create a new game or join an existing one with a game code
 2. Wait for all players to mark themselves as ready
 3. On your turn, draw a card from either the draw pile or discard pile
-4. Play melds (sets or runs) if possible
+4. Play melds (books or runs) if possible
 5. Discard one card to end your turn
 6. The first player to play all their cards wins the round
 
