@@ -3,19 +3,22 @@
 import { cn } from '@/lib/utils';
 
 interface RoundTrackerProps {
-  currentRound: number;
+  currentRound: number;   // internal 1–7
   contractLabel: string;
 }
 
+const DISPLAY_OFFSET = 5; // internal round + 5 = displayed round (6–12)
+
 export function RoundTracker({ currentRound, contractLabel }: RoundTrackerProps) {
   return (
-    <div className="flex flex-col items-center gap-1.5 py-2">
+    <div className="flex flex-col items-center gap-1 py-1">
       {/* Round pills */}
       <div className="flex items-center gap-1">
-        {Array.from({ length: 10 }, (_, i) => {
-          const round    = i + 1;
+        {Array.from({ length: 7 }, (_, i) => {
+          const round     = i + 1;
+          const displayed = round + DISPLAY_OFFSET;
           const isCurrent = round === currentRound;
-          const isPast   = round < currentRound;
+          const isPast    = round < currentRound;
 
           return (
             <div
@@ -29,7 +32,7 @@ export function RoundTracker({ currentRound, contractLabel }: RoundTrackerProps)
                     : 'w-6 h-6 bg-gray-800 text-gray-500',
               )}
             >
-              {round}
+              {displayed}
             </div>
           );
         })}

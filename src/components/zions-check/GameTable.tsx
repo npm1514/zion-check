@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import { CardTile } from './CardTile';
 import { Hand } from './Hand';
 import { MeldDisplay } from './MeldDisplay';
-import { OpponentPanel } from './OpponentPanel';
+import { OpponentPanel, AVATARS } from './OpponentPanel';
 import { RoundTracker } from './RoundTracker';
 import { Scoreboard } from './Scoreboard';
 import { getContract } from '@/lib/game/contracts';
@@ -26,14 +26,15 @@ interface MeldSlot {
 interface GameTableProps {
   state: GameState;
   myId: string;
+  isHost: boolean;
   roomCode: string;
-  buyWindowSecondsLeft: number;
   onDrawFromDeck: () => void;
   onTakeDiscard: () => void;
   onLayContract: (melds: { type: MeldType; cardIds: string[] }[]) => void;
   onLayToMeld: (meldId: string, cardId: string) => void;
   onDiscard: (cardId: string) => void;
   onBuy: () => void;
+  onNextRound: () => void;
   error: string | null;
 }
 
@@ -42,14 +43,15 @@ interface GameTableProps {
 export function GameTable({
   state,
   myId,
+  isHost,
   roomCode,
-  buyWindowSecondsLeft,
   onDrawFromDeck,
   onTakeDiscard,
   onLayContract,
   onLayToMeld,
   onDiscard,
   onBuy,
+  onNextRound,
   error,
 }: GameTableProps) {
 
@@ -60,8 +62,8 @@ export function GameTable({
   const contract      = getContract(state.round);
   const allMelds: Meld[] = state.players.flatMap((p) => p.melds);
   const topDiscard    = state.discardPile[state.discardPile.length - 1];
-  const canDraw       = isMyTurn && (state.phase === 'draw' || state.phase === 'buy_window');
-  const canTakeDiscard = isMyTurn && state.phase === 'draw' && !!topDiscard;
+  const canDraw        = isMyTurn && (state.phase === 'draw' || state.phase === 'buy_window');
+  const canTakeDiscard = isMyTurn && (state.phase === 'draw' || state.phase === 'buy_window') && !!topDiscard && state.lastDiscardedById !== myId;
   const canAct        = isMyTurn && state.phase === 'action';
 
   // ── UI state ─────────────────────────────────────────────────────────────────
@@ -70,7 +72,7 @@ export function GameTable({
   const [pendingMeldTarget, setPendingMeldTarget] = useState<{ meldId: string } | null>(null);
   const [selectedForDiscard,setSelectedForDiscard]= useState<string | null>(null);
 
-  // ── Meld builder state (lifted from Hand) ─────────────────────────────────
+  // ── Meld builder state ────────────────────────────────────────────────────
 
   const [meldSlots,    setMeldSlots]    = useState<MeldSlot[]>(() =>
     contract.requirements.map((r) => ({ type: r.type, minSize: r.minSize, cardIds: [] })),
@@ -92,22 +94,18 @@ export function GameTable({
   const handleCardClick = useCallback((cardId: string) => {
     if (!canAct) return;
 
-    // Extend a table meld
     if (pendingMeldTarget) {
       onLayToMeld(pendingMeldTarget.meldId, cardId);
       setPendingMeldTarget(null);
       return;
     }
 
-    // Assign to active meld slot
     if (activeSlotIdx !== null && !me.contractMet) {
       if (stagedIds.has(cardId)) {
-        // Remove from whatever slot
         setMeldSlots((prev) =>
           prev.map((s) => ({ ...s, cardIds: s.cardIds.filter((id) => id !== cardId) })),
         );
       } else {
-        // Add to active slot
         setMeldSlots((prev) =>
           prev.map((s, i) =>
             i === activeSlotIdx ? { ...s, cardIds: [...s.cardIds, cardId] } : s,
@@ -118,7 +116,6 @@ export function GameTable({
       return;
     }
 
-    // Select / deselect for discard
     setSelectedForDiscard((prev) => (prev === cardId ? null : cardId));
   }, [canAct, pendingMeldTarget, activeSlotIdx, me?.contractMet, stagedIds, onLayToMeld]);
 
@@ -149,7 +146,81 @@ export function GameTable({
     setActiveSlotIdx(null);
   }, [canLayContract, meldSlots, onLayContract]);
 
-  // ── Game Over ─────────────────────────────────────────────────────────────
+  // ── Round Over screen ─────────────────────────────────────────────────────
+
+  if (state.phase === 'round_end') {
+    const sorted = [...state.players].sort((a, b) => totalScore(a) - totalScore(b));
+    const roundJustPlayed = state.round + 5;   // display label (6–12)
+    const nextRoundNum    = state.round + 1 + 5;
+
+    return (
+      <div className="h-screen bg-[#0d3d1f] flex items-center justify-center p-6">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-lg text-center">
+          <div className="text-4xl mb-2">🎉</div>
+          <h1 className="text-2xl font-black mb-1">Round {roundJustPlayed} Complete!</h1>
+          <p className="text-gray-500 text-sm mb-6">Scores so far · lowest wins</p>
+
+          <table className="w-full text-sm mb-6">
+            <thead>
+              <tr className="text-gray-400 text-xs uppercase border-b border-gray-200">
+                <th className="text-left pb-2">Player</th>
+                {Array.from({ length: roundJustPlayed }, (_, i) => (
+                  <th key={i} className="text-center pb-2 w-10">R{i + 1}</th>
+                ))}
+                <th className="text-right pb-2 pr-1">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((player, rank) => (
+                <tr
+                  key={player.id}
+                  className={cn(
+                    'border-b border-gray-100',
+                    rank === 0 ? 'text-yellow-700 font-semibold' : 'text-gray-700',
+                  )}
+                >
+                  <td className="py-2 text-left">
+                    {rank === 0 && <span>👑 </span>}
+                    {player.name}
+                    {player.id === myId && (
+                      <span className="text-[10px] text-gray-400 ml-1">(you)</span>
+                    )}
+                  </td>
+                  {player.roundScores.map((score, ri) => (
+                    <td
+                      key={ri}
+                      className={cn(
+                        'text-center py-2 text-xs',
+                        ri === roundJustPlayed - 1 ? 'font-bold text-gray-900' : 'text-gray-400',
+                      )}
+                    >
+                      {score}
+                    </td>
+                  ))}
+                  <td className="text-right py-2 pr-1 font-bold">{totalScore(player)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {isHost ? (
+            <button
+              onClick={onNextRound}
+              className="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-bold text-lg rounded-xl shadow-lg transition-colors"
+            >
+              Deal Round {nextRoundNum} →
+            </button>
+          ) : (
+            <p className="text-gray-400 text-sm animate-pulse">
+              Waiting for the host to deal round {nextRoundNum}…
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Game Over screen ──────────────────────────────────────────────────────
 
   if (state.phase === 'game_over') {
     const sorted = [...state.players].sort((a, b) => totalScore(a) - totalScore(b));
@@ -176,6 +247,23 @@ export function GameTable({
 
   // ── Main render ───────────────────────────────────────────────────────────
 
+  // Turn banner text
+  const firstDrawPending   = canAct && state.lastDrawnId !== null && state.discardPile.length <= 1;
+  const isFirstDrawReject  = canDraw && state.lastDiscardedById === myId;
+  const turnText = isMyTurn
+    ? isFirstDrawReject
+      ? '🎴 Your turn — Pick up a card from the draw pile'
+      : canDraw
+        ? state.discardPile.length === 0
+          ? '🎴 Draw from the deck to start the round'
+          : '🎴 Your turn — click the deck or take the discard'
+        : firstDrawPending
+          ? '👀 Keep your draw or discard it to let others buy — then draw again'
+          : me.contractMet
+            ? '✓ Contract down — add cards to melds or discard'
+            : '📋 Your turn — fill your contract slots then lay them down'
+    : `⏳ Waiting for ${currentPlayer?.name}…`;
+
   return (
     <div
       className="h-screen flex flex-col overflow-hidden text-white"
@@ -185,238 +273,265 @@ export function GameTable({
     >
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <header className="shrink-0 flex items-center justify-between px-4 py-2 bg-black/30 border-b border-white/10">
-        <div className="flex items-center gap-3">
-          <span className="font-black text-base">🃏 Zion&apos;s Check</span>
-          <span className="text-xs bg-white/10 px-2 py-0.5 rounded font-mono tracking-widest">
-            {roomCode}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          {error && (
-            <span className="text-red-400 text-xs font-semibold">⚠ {error}</span>
-          )}
-          <button
-            onClick={() => setShowScoreboard((v) => !v)}
-            className="px-3 py-1 bg-white/10 hover:bg-white/20 rounded text-xs transition-colors"
-          >
-            📊 Scores
-          </button>
-        </div>
-      </header>
+      {/* 3-column grid so the round tracker is always perfectly centred */}
+      <header className="shrink-0 bg-black/30 border-b border-white/10">
+        <div className="grid grid-cols-3 items-center px-4 py-1.5">
+          <div className="flex items-center gap-2">
+            <span className="font-black text-sm">🃏 Zion&apos;s Check</span>
+            <span className="text-xs bg-white/10 px-2 py-0.5 rounded font-mono tracking-widest">
+              {roomCode}
+            </span>
+          </div>
 
-      {/* ── Opponent panels ──────────────────────────────────────────────────── */}
-      {opponents.length > 0 && (
-        <div className="shrink-0 flex gap-2 px-3 pt-2 pb-1 overflow-x-auto">
-          {opponents.map((p) => (
-            <OpponentPanel
-              key={p.id}
-              player={p}
-              isCurrentPlayer={currentPlayer?.id === p.id}
-              contractLabel={contract.label}
-            />
-          ))}
-        </div>
-      )}
+          {/* Round tracker — guaranteed centre column */}
+          <div className="flex justify-center">
+            <RoundTracker currentRound={state.round} contractLabel={contract.label} />
+          </div>
 
-      {/* ── Round tracker ────────────────────────────────────────────────────── */}
-      <div className="shrink-0">
-        <RoundTracker currentRound={state.round} contractLabel={contract.label} />
-      </div>
-
-      {/* ── Turn banner ──────────────────────────────────────────────────────── */}
-      <div
-        className={cn(
-          'shrink-0 mx-3 rounded-lg px-3 py-1.5 text-center text-xs font-bold mb-1',
-          isMyTurn ? 'bg-yellow-500/90 text-black' : 'bg-black/30 text-gray-300',
-        )}
-      >
-        {isMyTurn
-          ? canDraw
-            ? '🎴 Your turn — click the deck or discard pile to draw'
-            : me.contractMet
-              ? '✓ Contract down — add cards to melds or discard'
-              : '📋 Your turn — fill your contract slots below, then lay them down'
-          : `⏳ Waiting for ${currentPlayer?.name}…`}
-      </div>
-
-      {/* ── Centre: meld area + deck/discard ─────────────────────────────────── */}
-      <div className="flex flex-1 min-h-0 gap-3 px-3 pb-1">
-
-        {/* LEFT: meld staging / table melds */}
-        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 pr-1">
-
-          {/* Buy window overlay */}
-          {state.phase === 'buy_window' && (() => {
-            const me2      = state.players.find((p) => p.id === myId);
-            const isMeTurn = currentPlayer?.id === myId;
-            const already  = state.pendingBuyRequests.includes(myId);
-            const maxBuy   = state.round === 10 && (me2?.buysThisRound ?? 0) >= 1;
-            return (
-              <div className="bg-amber-900/80 border border-amber-500 rounded-xl p-3 flex items-center gap-3 shrink-0">
-                <div className="flex flex-col items-center">
-                  {topDiscard && <CardTile card={topDiscard} size="md" />}
-                  <span className={cn('text-xs font-mono mt-1 font-bold',
-                    buyWindowSecondsLeft <= 3 ? 'text-red-400' : 'text-yellow-300')}>
-                    {buyWindowSecondsLeft}s
-                  </span>
-                </div>
-                <div className="flex-1">
-                  <p className="text-xs font-bold text-amber-300 mb-1">Buy Window</p>
-                  {isMeTurn ? (
-                    <p className="text-xs text-gray-300">Others may buy the discard.</p>
-                  ) : already ? (
-                    <p className="text-xs text-yellow-300">Buy request sent — waiting…</p>
-                  ) : maxBuy ? (
-                    <p className="text-xs text-gray-400">Already used your 1 buy for round 10.</p>
-                  ) : (
-                    <button
-                      onClick={onBuy}
-                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold rounded-lg"
-                    >
-                      Buy! (+1 penalty card)
-                    </button>
-                  )}
-                  {state.pendingBuyRequests.length > 0 && (
-                    <p className="text-[10px] text-gray-400 mt-1">
-                      Buying: {state.pendingBuyRequests
-                        .map((id) => state.players.find((p) => p.id === id)?.name ?? id)
-                        .join(', ')}
-                    </p>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Meld slot builder (action phase, contract not yet met) */}
-          {canAct && !me.contractMet && (
-            <div className="bg-black/30 border border-white/10 rounded-xl p-3 shrink-0">
-              <p className="text-[11px] text-gray-400 uppercase tracking-wide mb-2">
-                Stage your contract
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {meldSlots.map((slot, idx) => {
-                  const isActive  = activeSlotIdx === idx;
-                  const isFull    = slot.cardIds.length >= slot.minSize;
-                  const slotCards = slot.cardIds
-                    .map((id) => me.hand.find((c) => c.id === id))
-                    .filter((c): c is Card => !!c);
-
-                  return (
-                    <div
-                      key={idx}
-                      onClick={() => setActiveSlotIdx(isActive ? null : idx)}
-                      className={cn(
-                        'flex flex-col gap-1.5 p-2 rounded-xl border-2 cursor-pointer',
-                        'transition-all min-w-[120px] flex-1',
-                        isActive  && 'border-yellow-400 bg-yellow-900/30 shadow-lg shadow-yellow-900/30',
-                        !isActive && isFull  && 'border-green-500 bg-green-900/30',
-                        !isActive && !isFull && 'border-white/10 bg-black/20 hover:border-white/30',
-                      )}
-                    >
-                      {/* Slot label */}
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-gray-300">
-                          {slot.type === 'set' ? '📋 Set' : '➡️ Run'} {slot.minSize}+
-                        </span>
-                        <span className="text-[10px]">
-                          {isFull
-                            ? <span className="text-green-400">✓</span>
-                            : isActive
-                              ? <span className="text-yellow-300">active</span>
-                              : <span className="text-gray-500">{slot.minSize - slotCards.length} left</span>}
-                        </span>
-                      </div>
-
-                      {/* Cards in slot + placeholders */}
-                      <div className="flex flex-wrap gap-1 min-h-[84px] items-start content-start">
-                        {slotCards.map((card) => (
-                          <div
-                            key={card.id}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setMeldSlots((prev) =>
-                                prev.map((s) => ({
-                                  ...s, cardIds: s.cardIds.filter((id) => id !== card.id),
-                                })),
-                              );
-                            }}
-                            title="Click to remove"
-                            className="cursor-pointer hover:opacity-70 transition-opacity"
-                          >
-                            <CardTile card={card} size="md" />
-                          </div>
-                        ))}
-                        {Array.from({ length: Math.max(0, slot.minSize - slotCards.length) }).map((_, i) => (
-                          <div
-                            key={`ph-${i}`}
-                            className={cn(
-                              'w-14 h-20 rounded-lg border-2 border-dashed flex items-center justify-center',
-                              isActive ? 'border-yellow-400/60 bg-yellow-900/10' : 'border-white/10',
-                            )}
-                          >
-                            {isActive && i === 0 && (
-                              <span className="text-yellow-400 text-[9px] text-center leading-tight px-1">
-                                tap<br />card
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Lay button */}
-              <button
-                onClick={handleLayContract}
-                disabled={!canLayContract}
-                className={cn(
-                  'mt-2 w-full py-2 text-sm font-bold rounded-lg transition-colors',
-                  canLayContract
-                    ? 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-900/50'
-                    : 'bg-white/5 text-gray-600 cursor-default',
-                )}
-              >
-                {canLayContract ? '✓ Lay Contract Down' : `Fill all ${meldSlots.length} slots first`}
-              </button>
-            </div>
-          )}
-
-          {/* Table melds */}
-          <div className="flex flex-col gap-2">
-            <p className="text-[11px] text-gray-500 uppercase tracking-wide">
-              Table Melds {allMelds.length === 0 && '— none yet'}
-            </p>
-            {allMelds.length > 0 && (
-              <div className="flex flex-col gap-3">
-                {state.players.map((player) =>
-                  player.melds.map((meld) => (
-                    <MeldDisplay
-                      key={meld.id}
-                      meld={meld}
-                      ownerName={player.name}
-                      canExtend={canAct && me.contractMet}
-                      onExtend={
-                        canAct && me.contractMet
-                          ? (meldId) => {
-                              setPendingMeldTarget({ meldId });
-                              setSelectedForDiscard(null);
-                            }
-                          : undefined
-                      }
-                    />
-                  )),
-                )}
-              </div>
-            )}
+          <div className="flex items-center justify-end">
+            <button
+              onClick={() => setShowScoreboard((v) => !v)}
+              className="px-3 py-1 bg-white/10 hover:bg-white/20 rounded text-xs transition-colors"
+            >
+              📊 Scores
+            </button>
           </div>
         </div>
 
-        {/* RIGHT: Deck + Discard (vertical stack) */}
-        <div className="shrink-0 flex flex-col items-center justify-center gap-4 w-24">
+        {/* Error row — only rendered when there's an error */}
+        {error && (
+          <div className="px-4 pb-1.5 text-center">
+            <span className="text-red-400 text-xs font-semibold">⚠ {error}</span>
+          </div>
+        )}
+      </header>
+
+      {/* ── All Players Row (you + opponents, each with their melds below) ──── */}
+      <div className="shrink-0 flex gap-2 px-2 pt-2 pb-1 overflow-x-auto">
+
+        {/* You */}
+        <div className="flex flex-col gap-1 min-w-[120px] flex-1 max-w-[170px]">
+          {/* Your panel */}
+          <div className={cn(
+            'rounded-xl border-2 overflow-hidden bg-gradient-to-b from-green-900 to-green-800',
+            isMyTurn ? 'border-yellow-400 shadow-md shadow-yellow-900/50' : 'border-green-600',
+          )}>
+            <div className={cn(
+              'flex items-center gap-1.5 px-2 py-1.5',
+              isMyTurn ? 'bg-yellow-500/20' : 'bg-black/20',
+            )}>
+              <span className="text-sm leading-none">
+                {AVATARS[me.seatIndex % AVATARS.length]}
+              </span>
+              <span className="text-xs font-bold text-white truncate flex-1">{me.name}</span>
+              {isMyTurn && <span className="text-yellow-300 text-[9px] font-bold animate-pulse shrink-0">▶</span>}
+              <span className="text-[10px] text-gray-300 shrink-0">🃏{me.hand.length}</span>
+            </div>
+            <div className="px-2 py-1">
+              {me.contractMet ? (
+                <span className="text-[10px] text-green-400 font-bold">✓ Down</span>
+              ) : (
+                <span className="text-[10px] text-gray-400 italic">{contract.label}</span>
+              )}
+            </div>
+          </div>
+          {/* Your melds are shown above the hand, not here */}
+        </div>
+
+        {/* Opponents */}
+        {opponents.map((player) => (
+          <div key={player.id} className="flex flex-col gap-1 min-w-[120px] flex-1 max-w-[200px]">
+            <OpponentPanel
+              player={player}
+              isCurrentPlayer={currentPlayer?.id === player.id}
+              contractLabel={contract.label}
+            />
+
+            {/* Their melds below the panel */}
+            {player.melds.length > 0 && (
+              <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
+                {player.melds.map((meld) => (
+                  <div key={meld.id} className="flex items-start gap-1 flex-wrap">
+                    <div className="flex flex-wrap gap-0.5">
+                      {meld.slots.map((slot, i) => (
+                        <div key={i} className="relative">
+                          <CardTile card={slot.card} size="sm" />
+                          {slot.substituting && (
+                            <span className="absolute -bottom-0.5 left-0 right-0 text-center text-[7px] bg-purple-700 text-white rounded leading-none">
+                              {slot.substituting.rank}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    {canAct && me.contractMet && (
+                      <button
+                        onClick={() => { setPendingMeldTarget({ meldId: meld.id }); setSelectedForDiscard(null); }}
+                        className={cn(
+                          'text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0 mt-0.5',
+                          pendingMeldTarget?.meldId === meld.id
+                            ? 'bg-yellow-400 text-black'
+                            : 'bg-white/20 hover:bg-white/30 text-white',
+                        )}
+                      >
+                        + Add
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* ── Turn banner ──────────────────────────────────────────────────────── */}
+      <div className={cn(
+        'shrink-0 mx-3 rounded-lg px-3 py-1.5 text-center text-xs font-bold mb-1',
+        isMyTurn ? 'bg-yellow-500/90 text-black' : 'bg-black/30 text-gray-300',
+      )}>
+        {turnText}
+      </div>
+
+      {/* ── Scrollable center ─────────────────────────────────────────────────── */}
+      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 px-3 pb-2">
+
+        {/* Buy window */}
+        {state.phase === 'buy_window' && (() => {
+          const isMeTurn   = currentPlayer?.id === myId;
+          const already    = state.pendingBuyRequests.includes(myId);
+          const maxBuy     = state.round === 7 && (me?.buysThisRound ?? 0) >= 1;
+          const iDiscard   = state.lastDiscardedById === myId;
+
+          // The discarder doesn't see the buy window at all
+          if (!topDiscard || iDiscard) return null;
+
+          return (
+            <div className="shrink-0 bg-amber-900/80 border border-amber-500 rounded-xl p-4 flex flex-col items-center gap-2 text-center">
+              <CardTile card={topDiscard} size="md" />
+              <p className="text-xs font-bold text-amber-300">
+                {isMeTurn ? 'Your turn — draw or take discard' : 'Buy the discard?'}
+              </p>
+              {isMeTurn ? (
+                <p className="text-xs text-gray-300">Others can buy before you pick up.</p>
+              ) : already ? (
+                <p className="text-xs text-yellow-300">Buy request sent — waiting for {currentPlayer?.name}…</p>
+              ) : maxBuy ? (
+                <p className="text-xs text-gray-400">Already used your 1 buy for round 12.</p>
+              ) : (
+                <button
+                  onClick={onBuy}
+                  className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold rounded-lg"
+                >
+                  Buy! (+1 penalty card)
+                </button>
+              )}
+              {state.pendingBuyRequests.length > 0 && (
+                <p className="text-[10px] text-gray-400">
+                  Buying: {state.pendingBuyRequests
+                    .map((id) => state.players.find((p) => p.id === id)?.name ?? id)
+                    .join(', ')}
+                </p>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* Meld staging (action phase, contract not yet met) */}
+        {canAct && !me.contractMet && (
+          <div className="shrink-0 bg-black/30 border border-white/10 rounded-xl p-3">
+            <p className="text-[11px] text-gray-400 uppercase tracking-wide mb-2">
+              Stage your contract
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {meldSlots.map((slot, idx) => {
+                const isActive  = activeSlotIdx === idx;
+                const isFull    = slot.cardIds.length >= slot.minSize;
+                const slotCards = slot.cardIds
+                  .map((id) => me.hand.find((c) => c.id === id))
+                  .filter((c): c is Card => !!c);
+
+                return (
+                  <div
+                    key={idx}
+                    onClick={() => setActiveSlotIdx(isActive ? null : idx)}
+                    className={cn(
+                      'flex flex-col gap-1.5 p-2 rounded-xl border-2 cursor-pointer',
+                      'transition-all min-w-[120px] flex-1',
+                      isActive  && 'border-yellow-400 bg-yellow-900/30 shadow-lg shadow-yellow-900/30',
+                      !isActive && isFull  && 'border-green-500 bg-green-900/30',
+                      !isActive && !isFull && 'border-white/10 bg-black/20 hover:border-white/30',
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-gray-300">
+                        {slot.type === 'set' ? '📋 Set' : '➡️ Run'} {slot.minSize}+
+                      </span>
+                      <span className="text-[10px]">
+                        {isFull
+                          ? <span className="text-green-400">✓</span>
+                          : isActive
+                            ? <span className="text-yellow-300">active</span>
+                            : <span className="text-gray-500">{slot.minSize - slotCards.length} left</span>}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1 min-h-[84px] items-start content-start">
+                      {slotCards.map((card) => (
+                        <div
+                          key={card.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMeldSlots((prev) =>
+                              prev.map((s) => ({
+                                ...s, cardIds: s.cardIds.filter((id) => id !== card.id),
+                              })),
+                            );
+                          }}
+                          title="Click to remove"
+                          className="cursor-pointer hover:opacity-70 transition-opacity"
+                        >
+                          <CardTile card={card} size="md" />
+                        </div>
+                      ))}
+                      {Array.from({ length: Math.max(0, slot.minSize - slotCards.length) }).map((_, i) => (
+                        <div
+                          key={`ph-${i}`}
+                          className={cn(
+                            'w-14 h-20 rounded-lg border-2 border-dashed flex items-center justify-center',
+                            isActive ? 'border-yellow-400/60 bg-yellow-900/10' : 'border-white/10',
+                          )}
+                        >
+                          {isActive && i === 0 && (
+                            <span className="text-yellow-400 text-[9px] text-center leading-tight px-1">
+                              tap<br />card
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={handleLayContract}
+              disabled={!canLayContract}
+              className={cn(
+                'mt-2 w-full py-2 text-sm font-bold rounded-lg transition-colors',
+                canLayContract
+                  ? 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-900/50'
+                  : 'bg-white/5 text-gray-600 cursor-default',
+              )}
+            >
+              {canLayContract ? '✓ Lay Contract Down' : `Fill all ${meldSlots.length} slots first`}
+            </button>
+          </div>
+        )}
+
+        {/* ── Deck + Discard centered ──────────────────────────────────────── */}
+        <div className="flex justify-center items-start gap-8 py-2">
 
           {/* Deck */}
           <div className="flex flex-col items-center gap-1">
@@ -448,7 +563,9 @@ export function GameTable({
               />
             ) : (
               <div className="w-16 h-24 rounded-xl border-2 border-dashed border-gray-700 flex items-center justify-center">
-                <span className="text-gray-700 text-xs">empty</span>
+                <span className="text-gray-600 text-[10px] text-center leading-tight px-1">
+                  Draw<br />to start
+                </span>
               </div>
             )}
             <span className={cn('text-xs font-bold', canTakeDiscard ? 'text-amber-300' : 'text-gray-500')}>
@@ -456,7 +573,32 @@ export function GameTable({
             </span>
           </div>
         </div>
+
       </div>
+
+      {/* ── Your melds above hand ─────────────────────────────────────────────── */}
+      {me.contractMet && me.melds.length > 0 && (
+        <div className="shrink-0 border-t border-white/10 bg-black/20 px-3 py-2">
+          <p className="text-[10px] text-green-400 font-bold uppercase tracking-wide mb-1.5">
+            Your Melds
+          </p>
+          <div className="flex gap-3 flex-wrap">
+            {me.melds.map((meld) => (
+              <MeldDisplay
+                key={meld.id}
+                meld={meld}
+                ownerName="You"
+                canExtend={canAct}
+                onExtend={
+                  canAct
+                    ? (meldId) => { setPendingMeldTarget({ meldId }); setSelectedForDiscard(null); }
+                    : undefined
+                }
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Player hand ───────────────────────────────────────────────────────── */}
       <div

@@ -153,9 +153,9 @@ export function Hand({
             </button>
           </div>
         )}
-        {canAct && activeSlotIdx === null && !pendingMeldTarget && !selectedForDiscard && (
+        {activeSlotIdx === null && !pendingMeldTarget && !selectedForDiscard && (
           <p className="text-gray-500 text-xs">
-            Click card to select · Drag to rearrange
+            {canAct ? 'Click card to select · Drag to rearrange' : 'Drag to rearrange'}
           </p>
         )}
       </div>
@@ -179,7 +179,7 @@ export function Hand({
             <div
               key={card.id}
               style={getCardStyle(idx, total, isSelected)}
-              draggable={canAct}
+              draggable
               onDragStart={() => onDragStart(card.id)}
               onDragOver={(e) => onDragOver(e, card.id)}
               onDrop={(e) => onDrop(e, card.id)}

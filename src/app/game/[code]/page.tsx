@@ -156,14 +156,15 @@ function GameRoom({ code, myId, myName, isHost }: GameRoomProps) {
     <GameTable
       state={game.state}
       myId={myId}
+      isHost={isHost}
       roomCode={code}
-      buyWindowSecondsLeft={game.buyWindowSecondsLeft}
       onDrawFromDeck={game.drawFromDeck}
       onTakeDiscard={game.takeDiscard}
       onLayContract={game.layContract}
       onLayToMeld={game.layToMeld}
       onDiscard={game.discard}
       onBuy={game.requestBuy}
+      onNextRound={game.nextRound}
       error={game.error}
     />
   );

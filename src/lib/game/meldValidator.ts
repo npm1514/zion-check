@@ -15,8 +15,8 @@ export function rankIndex(rank: Rank): number {
 /**
  * A valid SET has:
  * - All non-joker cards sharing the same rank
- * - No duplicate suits among non-jokers
  * - Minimum 3 cards total (including jokers)
+ * - Suits do NOT need to be unique — two 6♠ from different decks is fine
  */
 export function isValidSet(cards: Card[]): boolean {
   if (cards.length < 3) return false;
@@ -25,12 +25,9 @@ export function isValidSet(cards: Card[]): boolean {
   if (naturals.length === 0) return false; // need at least one real card
 
   const rank = naturals[0].rank as Rank;
-  const suits = new Set<string>();
 
   for (const c of naturals) {
-    if (c.rank !== rank) return false;           // mismatched rank
-    if (suits.has(c.suit)) return false;         // duplicate suit
-    suits.add(c.suit);
+    if (c.rank !== rank) return false; // mismatched rank
   }
 
   return true;
@@ -55,45 +52,49 @@ export function isValidRun(cards: Card[]): { valid: boolean; slots: MeldSlot[] }
   const suit = naturals[0].suit as Suit;
   if (naturals.some((c) => c.suit !== suit)) return { valid: false, slots: [] };
 
-  // Determine the range of ranks spanned
   const indices = naturals.map((c) => rankIndex(c.rank as Rank));
+
+  // Duplicate ranks are not allowed in a run
+  if (new Set(indices).size < naturals.length) return { valid: false, slots: [] };
+
   const minIdx = Math.min(...indices);
   const maxIdx = Math.max(...indices);
+  const span = maxIdx - minIdx + 1;
 
   // The run must fit within cards.length positions
-  const span = maxIdx - minIdx + 1;
   if (span > cards.length) return { valid: false, slots: [] };
   if (cards.length - span > jokerCount) return { valid: false, slots: [] };
 
-  // Build slots left-to-right, filling gaps with joker substitutions
   const naturalMap = new Map(naturals.map((c) => [rankIndex(c.rank as Rank), c]));
   const jokers = cards.filter((c) => c.isJoker);
-  let jokerIdx = 0;
 
-  // Decide the starting rank of the run
-  // The run occupies positions [startIdx, startIdx + cards.length - 1]
-  // We pick the minimum natural minus however many jokers are to its left
-  const startIdx = minIdx; // simplest: naturals anchor the run's start
-  const slots: MeldSlot[] = [];
+  // Try every valid starting position so jokers can extend left OR right.
+  // e.g. Q-K-A + Joker → J-Q-K-A (joker must go left, not past the end of ranks)
+  const minStart = Math.max(0, maxIdx - cards.length + 1);
+  const maxStart = Math.min(minIdx, RANK_ORDER.length - cards.length);
 
-  for (let i = 0; i < cards.length; i++) {
-    const ri = startIdx + i;
-    if (ri < 0 || ri >= RANK_ORDER.length) return { valid: false, slots: [] };
+  for (let startIdx = minStart; startIdx <= maxStart; startIdx++) {
+    let jokerIdx = 0;
+    const slots: MeldSlot[] = [];
+    let ok = true;
 
-    const rank = RANK_ORDER[ri];
-    if (naturalMap.has(ri)) {
-      slots.push({ card: naturalMap.get(ri)! });
-    } else {
-      // Fill with a joker
-      if (jokerIdx >= jokers.length) return { valid: false, slots: [] };
-      slots.push({
-        card: jokers[jokerIdx++],
-        substituting: { suit, rank },
-      });
+    for (let i = 0; i < cards.length; i++) {
+      const ri = startIdx + i;
+      const rank = RANK_ORDER[ri];
+      if (naturalMap.has(ri)) {
+        slots.push({ card: naturalMap.get(ri)! });
+      } else {
+        if (jokerIdx >= jokers.length) { ok = false; break; }
+        slots.push({ card: jokers[jokerIdx++], substituting: { suit, rank } });
+      }
+    }
+
+    if (ok && jokerIdx === jokers.length) {
+      return { valid: true, slots };
     }
   }
 
-  return { valid: true, slots };
+  return { valid: false, slots: [] };
 }
 
 // ─── Build a Meld from raw cards ──────────────────────────────────────────────
@@ -108,18 +109,12 @@ export function buildMeld(
     if (!isValidSet(cards)) return null;
     const jokers = cards.filter((c) => c.isJoker);
     const naturals = cards.filter((c) => !c.isJoker);
-    const rank = (naturals[0].rank as Rank);
-    // Jokers in a set substitute any suit of the set's rank
-    const usedSuits = new Set(naturals.map((c) => c.suit as Suit));
-    const allSuits: Suit[] = ['hearts', 'diamonds', 'clubs', 'spades'];
-    const availSuits = allSuits.filter((s) => !usedSuits.has(s));
 
+    // Sets require only matching rank — suits are unrestricted.
+    // Jokers in a set are pure wildcards with no specific substitution target.
     const slots: MeldSlot[] = [
       ...naturals.map((c): MeldSlot => ({ card: c })),
-      ...jokers.map((c, i): MeldSlot => ({
-        card: c,
-        substituting: { suit: availSuits[i] ?? 'hearts', rank },
-      })),
+      ...jokers.map((c): MeldSlot => ({ card: c })),
     ];
 
     return { id, ownerId, type, slots };
@@ -144,14 +139,11 @@ export function extendMeld(meld: Meld, card: Card): Meld | null {
 
   if (meld.type === 'set') {
     if (!card.isJoker) {
-      // Must match the set's rank and not duplicate a suit
+      // Card must match the set's rank (suits are unrestricted in this game)
       const naturals = meld.slots.filter((s) => !s.card.isJoker);
       const setRank = (naturals[0].card.rank as Rank);
       if (card.rank !== setRank) return null;
-      const existingSuits = new Set(naturals.map((s) => s.card.suit));
-      if (existingSuits.has(card.suit)) return null;
     }
-    // For joker extending a set, determine next available suit
     const newCards = [...cards, card];
     const updated = buildMeld(meld.id, meld.ownerId, 'set', newCards);
     return updated;

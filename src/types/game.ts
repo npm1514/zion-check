@@ -80,6 +80,8 @@ export interface GameState {
   buyWindowOpenAt: number | null;   // epoch ms, null when window closed
   hostId: string;
   version: number;                  // optimistic-lock counter
+  lastDrawnId: string | null;       // id of the card drawn this action, for first-draw reject
+  lastDiscardedById: string | null; // player who made the most recent discard (cannot take it back)
 }
 
 // ─── Scoring ──────────────────────────────────────────────────────────────────

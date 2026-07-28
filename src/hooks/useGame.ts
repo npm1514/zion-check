@@ -3,34 +3,33 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { GameState, MeldType, PlayerState } from '@/types/game';
 import {
+  advanceToNextRound,
   createInitialState,
   discard,
   drawFromDeck,
   layContract,
   layToMeld,
   requestBuy,
-  resolveBuyWindow,
   startRound,
   takeDiscard,
 } from '@/lib/game/gameEngine';
 
-const BUY_WINDOW_MS = 12_000;
 const HELLO_TIMEOUT = 8_000;
 
 export interface UseGameReturn {
-  state:                 GameState | null;
-  loading:               boolean;
-  error:                 string | null;
-  myId:                  string;
-  startGame:             () => Promise<void>;
-  setReady:              () => Promise<void>;
-  requestBuy:            () => Promise<void>;
-  drawFromDeck:          () => Promise<void>;
-  takeDiscard:           () => Promise<void>;
-  layContract:           (melds: { type: MeldType; cardIds: string[] }[]) => Promise<void>;
-  layToMeld:             (meldId: string, cardId: string) => Promise<void>;
-  discard:               (cardId: string) => Promise<void>;
-  buyWindowSecondsLeft:  number;
+  state:        GameState | null;
+  loading:      boolean;
+  error:        string | null;
+  myId:         string;
+  startGame:    () => Promise<void>;
+  setReady:     () => Promise<void>;
+  nextRound:    () => Promise<void>;
+  requestBuy:   () => Promise<void>;
+  drawFromDeck: () => Promise<void>;
+  takeDiscard:  () => Promise<void>;
+  layContract:  (melds: { type: MeldType; cardIds: string[] }[]) => Promise<void>;
+  layToMeld:    (meldId: string, cardId: string) => Promise<void>;
+  discard:      (cardId: string) => Promise<void>;
 }
 
 export function useGame(
@@ -39,14 +38,12 @@ export function useGame(
   myName:   string,
   isHost:   boolean,
 ): UseGameReturn {
-  const [state,                setState]                = useState<GameState | null>(null);
-  const [loading,              setLoading]              = useState(true);
-  const [error,                setError]                = useState<string | null>(null);
-  const [buyWindowSecondsLeft, setBuyWindowSecondsLeft] = useState(0);
+  const [state,   setState]   = useState<GameState | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState<string | null>(null);
 
-  const stateRef  = useRef<GameState | null>(null);
-  const sendRef   = useRef<((msg: object) => void) | null>(null);
-  const timerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stateRef = useRef<GameState | null>(null);
+  const sendRef  = useRef<((msg: object) => void) | null>(null);
 
   const syncState = useCallback((s: GameState) => {
     stateRef.current = s;
@@ -162,42 +159,6 @@ export function useGame(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomCode, myId, myName, isHost]);
 
-  // ── Buy-window countdown ──────────────────────────────────────────────────
-
-  useEffect(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-
-    if (!state || state.phase !== 'buy_window' || !state.buyWindowOpenAt) {
-      setBuyWindowSecondsLeft(0);
-      return;
-    }
-
-    const openAt = state.buyWindowOpenAt;
-
-    const tick = () => {
-      const elapsed = Date.now() - openAt;
-      const left    = Math.max(0, Math.ceil((BUY_WINDOW_MS - elapsed) / 1000));
-      setBuyWindowSecondsLeft(left);
-
-      if (left === 0) {
-        clearInterval(timerRef.current!);
-        const s = stateRef.current;
-        if (!s) return;
-        const cp = s.players[s.currentPlayerIdx];
-        if (cp.id === myId) {
-          const newState = resolveBuyWindow(s);
-          syncState(newState);
-          sendRef.current?.({ type: 'state', state: newState });
-        }
-      }
-    };
-
-    tick();
-    timerRef.current = setInterval(tick, 500);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state?.phase, state?.buyWindowOpenAt, myId, syncState]);
-
   // ── Action helper ─────────────────────────────────────────────────────────
 
   const apply = useCallback(
@@ -282,6 +243,11 @@ export function useGame(
     [apply, myId],
   );
 
+  const nextRound = useCallback(
+    () => apply((s) => ({ state: advanceToNextRound(s) })),
+    [apply],
+  );
+
   return {
     state,
     loading,
@@ -289,12 +255,12 @@ export function useGame(
     myId,
     startGame,
     setReady,
+    nextRound,
     requestBuy:   reqBuy,
     drawFromDeck: drawDeck,
     takeDiscard:  takeDisc,
     layContract:  layContr,
     layToMeld:    layMeld,
     discard:      discardCard,
-    buyWindowSecondsLeft,
   };
 }

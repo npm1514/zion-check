@@ -19,7 +19,7 @@ export function BuyPanel({ state, myId, secondsLeft, onBuy }: BuyPanelProps) {
   if (!topDiscard || state.phase !== 'buy_window') return null;
 
   const alreadyRequested = state.pendingBuyRequests.includes(myId);
-  const maxBuysReached = state.round === 10 && (me?.buysThisRound ?? 0) >= 1;
+  const maxBuysReached = state.round === 7 && (me?.buysThisRound ?? 0) >= 1;
   return (
     <div className="bg-amber-900 border border-amber-600 rounded-xl p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between">
@@ -41,7 +41,7 @@ export function BuyPanel({ state, myId, secondsLeft, onBuy }: BuyPanelProps) {
           ) : alreadyRequested ? (
             <p className="text-yellow-300 text-sm">Buy request submitted — waiting…</p>
           ) : maxBuysReached ? (
-            <p className="text-gray-400 text-sm">You&apos;ve used your 1 buy for round 10.</p>
+            <p className="text-gray-400 text-sm">You&apos;ve used your 1 buy for round 12.</p>
           ) : (
             <button
               onClick={onBuy}

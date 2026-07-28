@@ -31,8 +31,8 @@ const SUIT_SYMBOLS: Record<string, string> = {
 
 const SUIT_COLORS: Record<string, string> = {
   hearts:   'text-red-600',
-  diamonds: 'text-red-600',
-  clubs:    'text-gray-900',
+  diamonds: 'text-blue-600',
+  clubs:    'text-emerald-700',
   spades:   'text-gray-900',
   joker:    'text-purple-600',
 };

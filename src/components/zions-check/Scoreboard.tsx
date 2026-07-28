@@ -17,7 +17,7 @@ export function Scoreboard({ state }: ScoreboardProps) {
 
       {/* Current round info */}
       <div className="mb-3 text-sm text-gray-300">
-        Round <span className="text-white font-bold">{state.round}</span> / 10
+        Round <span className="text-white font-bold">{state.round + 5}</span> / 12
         {' · '}
         <span className="italic">{CONTRACTS.find(c => c.round === state.round)?.label}</span>
       </div>
@@ -28,7 +28,7 @@ export function Scoreboard({ state }: ScoreboardProps) {
           <tr className="text-gray-400 text-xs uppercase border-b border-gray-700">
             <th className="text-left pb-1">Player</th>
             {Array.from({ length: state.round - 1 }, (_, i) => (
-              <th key={i} className="text-center pb-1 w-8">R{i + 1}</th>
+              <th key={i} className="text-center pb-1 w-8">{i + 6}</th>
             ))}
             <th className="text-right pb-1 pr-1">Total</th>
           </tr>

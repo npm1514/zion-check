@@ -9,7 +9,7 @@ import { cardsForRound, createShuffledDeck, drawCards } from './deck';
 import { getContract } from './contracts';
 import { nanoid } from 'nanoid';
 
-const MAX_ROUNDS = 10;
+const MAX_ROUNDS = 7;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -58,6 +58,8 @@ export function createInitialState(
     })),
     pendingBuyRequests: [],
     buyWindowOpenAt: null,
+    lastDrawnId: null,
+    lastDiscardedById: null,
     hostId,
     version: 0,
   };
@@ -80,17 +82,18 @@ export function startRound(state: GameState): GameState {
     deck = remaining;
   }
 
-  // Flip first discard
-  const [firstDiscard, remaining] = drawCards(deck, 1);
-
+  // No initial flip — first player draws from the deck and decides
+  // what to discard (house rule: discard pile starts empty each round).
+  // currentPlayerIdx is inherited from the caller (rotated by advanceToNextRound).
   return {
     ...s,
-    phase: 'buy_window',
-    deck: remaining,
-    discardPile: firstDiscard,
+    phase: 'draw',
+    deck,
+    discardPile: [],
     pendingBuyRequests: [],
-    buyWindowOpenAt: Date.now(),
-    currentPlayerIdx: 0,
+    buyWindowOpenAt: null,
+    lastDrawnId: null,
+    lastDiscardedById: null,
     version: s.version + 1,
   };
 }
@@ -148,7 +151,7 @@ export function requestBuy(state: GameState, playerId: string): GameState {
   if (!player) return state;
 
   // Enforce round-10 single-buy rule
-  if (state.round === 10 && player.buysThisRound >= 1) return state;
+  if (state.round === 7 && player.buysThisRound >= 1) return state;
 
   if (state.pendingBuyRequests.includes(playerId)) return state;
 
@@ -178,11 +181,12 @@ export function drawFromDeck(state: GameState, playerId: string): GameState {
     hand: [...p.hand, ...drawn],
   })) as GameState;
 
-  // Open a new buy window for the discard pile top AFTER the draw
   return {
     ...s,
     deck: remaining,
     phase: 'action',
+    lastDrawnId: drawn[0].id,   // lets discard() detect first-draw reject
+    lastDiscardedById: null,    // drawing from deck clears any prior discard lock
     version: s.version + 1,
   };
 }
@@ -194,6 +198,8 @@ export function takeDiscard(state: GameState, playerId: string): GameState {
   const currentPlayer = state.players[state.currentPlayerIdx];
   if (currentPlayer.id !== playerId) return state;
   if (state.discardPile.length === 0) return state;
+  // Prevent a player from immediately taking back the card they just discarded
+  if (state.lastDiscardedById === playerId) return state;
 
   // Close buy window (active player taking discard cancels it)
   const topCard = state.discardPile[state.discardPile.length - 1];
@@ -212,7 +218,7 @@ export function takeDiscard(state: GameState, playerId: string): GameState {
     hand: [...p.hand, topCard],
   })) as GameState;
 
-  return { ...s, version: s.version + 1 };
+  return { ...s, lastDiscardedById: null, version: s.version + 1 };
 }
 
 // ─── Lay down contract melds ──────────────────────────────────────────────────
@@ -239,16 +245,36 @@ export function layContract(
   const builtMelds: Meld[] = [];
   const usedIds = new Set<string>();
 
-  for (const pm of proposedMelds) {
+  for (let mi = 0; mi < proposedMelds.length; mi++) {
+    const pm = proposedMelds[mi];
+    const label = `Meld ${mi + 1} (${pm.type})`;
     const cards: Card[] = [];
     for (const id of pm.cardIds) {
-      if (!handMap.has(id)) return { state, error: `Card ${id} not in hand` };
-      if (usedIds.has(id)) return { state, error: 'Duplicate card in melds' };
+      if (!handMap.has(id)) return { state, error: `${label}: card not found in hand` };
+      if (usedIds.has(id)) return { state, error: `${label}: same card used twice` };
       cards.push(handMap.get(id)!);
       usedIds.add(id);
     }
+
     const meld = buildMeld(nanoid(), playerId, pm.type, cards);
-    if (!meld) return { state, error: `Invalid ${pm.type} meld` };
+    if (!meld) {
+      // Give a specific reason
+      const naturals = cards.filter((c) => !c.isJoker);
+      if (pm.type === 'set') {
+        if (cards.length < 3) return { state, error: `${label}: need at least 3 cards` };
+        if (naturals.length === 0) return { state, error: `${label}: need at least one non-joker card` };
+        const ranks = new Set(naturals.map((c) => c.rank));
+        if (ranks.size > 1)
+          return { state, error: `${label}: all cards must be the same number/rank (got ${[...ranks].join(', ')})` };
+      } else {
+        if (cards.length < 4) return { state, error: `${label}: need at least 4 cards` };
+        if (naturals.length === 0) return { state, error: `${label}: need at least one non-joker card` };
+        const suits = new Set(naturals.map((c) => c.suit));
+        if (suits.size > 1)
+          return { state, error: `${label}: all cards in a run must be the same suit (got ${[...suits].join(', ')})` };
+      }
+      return { state, error: `${label}: invalid — check that cards are consecutive (run) or same number (set)` };
+    }
     builtMelds.push(meld);
   }
 
@@ -343,28 +369,49 @@ export function discard(
   const newHand = currentPlayer.hand.filter((c) => c.id !== cardId);
   let s = updatePlayer(state, playerId, (p) => ({ ...p, hand: newHand })) as GameState;
 
-  // Check if this player went out (empty hand)
-  const wentOut = newHand.length === 0;
-
   const newDiscardPile = [...s.discardPile, card];
 
+  // ── First-draw reject ───────────────────────────────────────────────────────
+  // If the player discards the very card they just drew, AND the discard pile was
+  // empty (start of round), let others buy it then give the SAME player another draw.
+  if (state.discardPile.length === 0 && state.lastDrawnId === cardId) {
+    return {
+      state: {
+        ...s,
+        discardPile: newDiscardPile,
+        phase: 'buy_window',
+        currentPlayerIdx: state.currentPlayerIdx, // same player draws again next
+        pendingBuyRequests: [],
+        buyWindowOpenAt: Date.now(),
+        lastDrawnId: null,
+        lastDiscardedById: playerId,
+        version: s.version + 1,
+      },
+    };
+  }
+
+  // Check if this player went out (empty hand)
+  // A player can only end the round by discarding their last card
+  // AND having already met their contract.
+  const wentOut = newHand.length === 0 && currentPlayer.contractMet;
+
   if (wentOut) {
-    // Score the round
+    // Score the round — hands stay visible so players can see what everyone held
     s = scoreRound({ ...s, discardPile: newDiscardPile });
 
     if (s.round >= MAX_ROUNDS) {
       return { state: { ...s, phase: 'game_over', version: s.version + 1 } };
     }
 
-    // Advance to next round
-    const nextRound = s.round + 1;
+    // Pause in round_end so the scoreboard is displayed before the next deal.
+    // Rotate the first player so the lead passes clockwise each round.
     return {
-      state: startRound({
+      state: {
         ...s,
-        round: nextRound,
         phase: 'round_end',
         currentPlayerIdx: (state.currentPlayerIdx + 1) % s.players.length,
-      }),
+        version: s.version + 1,
+      },
     };
   }
 
@@ -379,6 +426,8 @@ export function discard(
       currentPlayerIdx: nextIdx,
       pendingBuyRequests: [],
       buyWindowOpenAt: Date.now(),
+      lastDrawnId: null,
+      lastDiscardedById: playerId,
       version: s.version + 1,
     },
   };
@@ -395,6 +444,13 @@ function scoreRound(state: GameState): GameState {
     };
   });
   return { ...state, players, phase: 'round_end' };
+}
+
+// ─── Advance to next round (called by host after round_end scoreboard) ────────
+
+export function advanceToNextRound(state: GameState): GameState {
+  if (state.phase !== 'round_end') return state;
+  return startRound({ ...state, round: state.round + 1 });
 }
 
 // ─── Read-only helpers ────────────────────────────────────────────────────────
