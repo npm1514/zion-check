@@ -1,22 +1,19 @@
 {
-  "name": "contract-rummy",
+  "name": "zions-check",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node server.js",
     "build": "next build",
-    "start": "next start",
+    "start": "NODE_ENV=production node server.js",
     "lint": "next lint"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.49.4",
+    "nanoid": "^5.1.5",
     "next": "15.3.3",
     "react": "^19.0.0",
-    "react-dnd": "^16.0.1",
-    "react-dnd-html5-backend": "^16.0.1",
-    "react-dom": "^19.0.0",
-    "socket.io-client": "^4.8.1",
-    "styled-components": "^6.1.18",
-    "uuid": "^11.1.0"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

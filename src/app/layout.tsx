@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import DndProviderWrapper from "./components/DndProviderWrapper";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Zion's Check - Online Card Game",
-  description: "Play Zion's Check online with friends. Create or join a game and enjoy this classic card game variant.",
+  title: "Zion's Check",
+  description: "Play Zion's Check online with family. Create or join a game from anywhere.",
 };
 
 export default function RootLayout({
@@ -25,12 +24,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        <DndProviderWrapper>
-          {children}
-        </DndProviderWrapper>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        {children}
       </body>
     </html>
   );
