@@ -62,11 +62,15 @@ export function useGame(
       setLoading(false);
     }
 
-    // Connect to the dedicated WebSocket relay (port 3001 in dev, same host in prod)
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsPort   = process.env.NEXT_PUBLIC_WS_PORT ?? '3001';
-    const wsHost   = `${window.location.hostname}:${wsPort}`;
-    const ws = new WebSocket(`${protocol}//${wsHost}?room=${roomCode}`);
+    // Connect to the WebSocket relay.
+    // In prod (Vercel) set NEXT_PUBLIC_WS_URL=wss://your-relay.railway.app
+    // In dev falls back to ws://localhost:3001
+    const wsBase = process.env.NEXT_PUBLIC_WS_URL ?? (() => {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsPort   = process.env.NEXT_PUBLIC_WS_PORT ?? '3001';
+      return `${protocol}//${window.location.hostname}:${wsPort}`;
+    })();
+    const ws = new WebSocket(`${wsBase}?room=${roomCode}`);
 
     function send(msg: object) {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
@@ -148,7 +152,7 @@ export function useGame(
     };
 
     ws.onerror = () => {
-      setError('Could not connect to game server — make sure you started with: node server.js');
+      setError('Could not connect to game server — check that the relay is running');
       setLoading(false);
     };
 

@@ -3,9 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node server.js",
+    "dev": "node zion-server/server.js",
     "build": "next build",
-    "start": "NODE_ENV=production node server.js",
+    "start": "NODE_ENV=production node zion-server/server.js",
+    "start:ws": "node zion-server/ws-server.js",
     "lint": "next lint"
   },
   "dependencies": {
@@ -13,7 +14,8 @@
     "nanoid": "^5.1.5",
     "next": "15.3.8",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "ws": "^8.19.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
