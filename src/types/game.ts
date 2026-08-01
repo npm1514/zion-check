@@ -50,7 +50,8 @@ export interface PlayerState {
   seatIndex: number;
   hand: Card[];
   melds: Meld[];          // melds this player has laid on the table
-  contractMet: boolean;   // has met the round contract
+  contractMet: boolean;      // has met the round contract
+  justLaidContract: boolean; // laid contract THIS turn — cannot extend melds until next turn
   buysThisRound: number;
   roundScores: number[];  // one entry per completed round
   isConnected: boolean;

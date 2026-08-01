@@ -63,7 +63,7 @@ export function GameTable({
   const allMelds: Meld[] = state.players.flatMap((p) => p.melds);
   const topDiscard    = state.discardPile[state.discardPile.length - 1];
   const canDraw        = isMyTurn && (state.phase === 'draw' || state.phase === 'buy_window');
-  const canTakeDiscard = isMyTurn && (state.phase === 'draw' || state.phase === 'buy_window') && !!topDiscard && state.lastDiscardedById !== myId;
+  const canTakeDiscard = isMyTurn && (state.phase === 'draw' || state.phase === 'buy_window') && !!topDiscard && state.lastDiscardedById !== myId && !me.contractMet;
   const canAct        = isMyTurn && state.phase === 'action';
 
   // ── UI state ─────────────────────────────────────────────────────────────────
@@ -164,8 +164,8 @@ export function GameTable({
             <thead>
               <tr className="text-gray-400 text-xs uppercase border-b border-gray-200">
                 <th className="text-left pb-2">Player</th>
-                {Array.from({ length: roundJustPlayed }, (_, i) => (
-                  <th key={i} className="text-center pb-2 w-10">R{i + 1}</th>
+                {Array.from({ length: state.round }, (_, i) => (
+                  <th key={i} className="text-center pb-2 w-10">{i + 6}</th>
                 ))}
                 <th className="text-right pb-2 pr-1">Total</th>
               </tr>
@@ -191,7 +191,7 @@ export function GameTable({
                       key={ri}
                       className={cn(
                         'text-center py-2 text-xs',
-                        ri === roundJustPlayed - 1 ? 'font-bold text-gray-900' : 'text-gray-400',
+                        ri === state.round - 1 ? 'font-bold text-gray-900' : 'text-gray-400',
                       )}
                     >
                       {score}
@@ -306,37 +306,8 @@ export function GameTable({
         )}
       </header>
 
-      {/* ── All Players Row (you + opponents, each with their melds below) ──── */}
+      {/* ── Opponents Row (with their melds below) ──── */}
       <div className="shrink-0 flex gap-2 px-2 pt-2 pb-1 overflow-x-auto">
-
-        {/* You */}
-        <div className="flex flex-col gap-1 min-w-[120px] flex-1 max-w-[170px]">
-          {/* Your panel */}
-          <div className={cn(
-            'rounded-xl border-2 overflow-hidden bg-gradient-to-b from-green-900 to-green-800',
-            isMyTurn ? 'border-yellow-400 shadow-md shadow-yellow-900/50' : 'border-green-600',
-          )}>
-            <div className={cn(
-              'flex items-center gap-1.5 px-2 py-1.5',
-              isMyTurn ? 'bg-yellow-500/20' : 'bg-black/20',
-            )}>
-              <span className="text-sm leading-none">
-                {AVATARS[me.seatIndex % AVATARS.length]}
-              </span>
-              <span className="text-xs font-bold text-white truncate flex-1">{me.name}</span>
-              {isMyTurn && <span className="text-yellow-300 text-[9px] font-bold animate-pulse shrink-0">▶</span>}
-              <span className="text-[10px] text-gray-300 shrink-0">🃏{me.hand.length}</span>
-            </div>
-            <div className="px-2 py-1">
-              {me.contractMet ? (
-                <span className="text-[10px] text-green-400 font-bold">✓ Down</span>
-              ) : (
-                <span className="text-[10px] text-gray-400 italic">{contract.label}</span>
-              )}
-            </div>
-          </div>
-          {/* Your melds are shown above the hand, not here */}
-        </div>
 
         {/* Opponents */}
         {opponents.map((player) => (
@@ -364,7 +335,7 @@ export function GameTable({
                         </div>
                       ))}
                     </div>
-                    {canAct && me.contractMet && (
+                    {canAct && me.contractMet && !me.justLaidContract && (
                       <button
                         onClick={() => { setPendingMeldTarget({ meldId: meld.id }); setSelectedForDiscard(null); }}
                         className={cn(
@@ -396,46 +367,6 @@ export function GameTable({
       {/* ── Scrollable center ─────────────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 px-3 pb-2">
 
-        {/* Buy window */}
-        {state.phase === 'buy_window' && (() => {
-          const isMeTurn   = currentPlayer?.id === myId;
-          const already    = state.pendingBuyRequests.includes(myId);
-          const maxBuy     = state.round === 7 && (me?.buysThisRound ?? 0) >= 1;
-          const iDiscard   = state.lastDiscardedById === myId;
-
-          // The discarder doesn't see the buy window at all
-          if (!topDiscard || iDiscard) return null;
-
-          return (
-            <div className="shrink-0 bg-amber-900/80 border border-amber-500 rounded-xl p-4 flex flex-col items-center gap-2 text-center">
-              <CardTile card={topDiscard} size="md" />
-              <p className="text-xs font-bold text-amber-300">
-                {isMeTurn ? 'Your turn — draw or take discard' : 'Buy the discard?'}
-              </p>
-              {isMeTurn ? (
-                <p className="text-xs text-gray-300">Others can buy before you pick up.</p>
-              ) : already ? (
-                <p className="text-xs text-yellow-300">Buy request sent — waiting for {currentPlayer?.name}…</p>
-              ) : maxBuy ? (
-                <p className="text-xs text-gray-400">Already used your 1 buy for round 12.</p>
-              ) : (
-                <button
-                  onClick={onBuy}
-                  className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold rounded-lg"
-                >
-                  Buy! (+1 penalty card)
-                </button>
-              )}
-              {state.pendingBuyRequests.length > 0 && (
-                <p className="text-[10px] text-gray-400">
-                  Buying: {state.pendingBuyRequests
-                    .map((id) => state.players.find((p) => p.id === id)?.name ?? id)
-                    .join(', ')}
-                </p>
-              )}
-            </div>
-          );
-        })()}
 
         {/* Meld staging (action phase, contract not yet met) */}
         {canAct && !me.contractMet && (
@@ -571,6 +502,24 @@ export function GameTable({
             <span className={cn('text-xs font-bold', canTakeDiscard ? 'text-amber-300' : 'text-gray-500')}>
               {canTakeDiscard ? 'TAKE' : 'DISCARD'}
             </span>
+
+            {/* Buy button — shown to non-active players during buy window (not if contract already met) */}
+            {state.phase === 'buy_window' && !isMyTurn && topDiscard && state.lastDiscardedById !== myId && !me.contractMet && (() => {
+              const already = state.pendingBuyRequests.includes(myId);
+              const maxBuy  = state.round === 7 && (me?.buysThisRound ?? 0) >= 1;
+              return already ? (
+                <span className="text-[10px] text-yellow-300 mt-1">Requested…</span>
+              ) : maxBuy ? (
+                <span className="text-[10px] text-gray-500 mt-1">Max buys used</span>
+              ) : (
+                <button
+                  onClick={onBuy}
+                  className="mt-1 px-3 py-1 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold rounded-lg"
+                >
+                  Buy!
+                </button>
+              );
+            })()}
           </div>
         </div>
 
@@ -588,9 +537,9 @@ export function GameTable({
                 key={meld.id}
                 meld={meld}
                 ownerName="You"
-                canExtend={canAct}
+                canExtend={canAct && !me.justLaidContract}
                 onExtend={
-                  canAct
+                  canAct && !me.justLaidContract
                     ? (meldId) => { setPendingMeldTarget({ meldId }); setSelectedForDiscard(null); }
                     : undefined
                 }
@@ -602,9 +551,24 @@ export function GameTable({
 
       {/* ── Player hand ───────────────────────────────────────────────────────── */}
       <div
-        className="shrink-0 border-t border-white/10 bg-black/30 pt-2 pb-3"
+        className={cn(
+          'shrink-0 border-t pb-3',
+          isMyTurn
+            ? 'border-yellow-400/60 bg-yellow-500/10 pt-0'
+            : 'border-white/10 bg-black/30 pt-2',
+        )}
         style={{ minHeight: '175px' }}
       >
+        {/* Name bar */}
+        <div className={cn(
+          'flex items-center justify-center gap-2 px-3 py-1.5',
+          isMyTurn ? 'bg-yellow-500/20' : 'bg-black/20',
+        )}>
+          <span className="text-sm leading-none">{AVATARS[me.seatIndex % AVATARS.length]}</span>
+          <span className="text-xs font-bold text-white">{me.name} <span className="text-gray-400 font-normal">(you)</span></span>
+          {isMyTurn && <span className="text-yellow-300 text-[9px] font-bold animate-pulse">YOUR TURN</span>}
+          <span className="text-[10px] text-gray-300">🃏{me.hand.length}</span>
+        </div>
         <Hand
           cards={me.hand}
           canAct={canAct}

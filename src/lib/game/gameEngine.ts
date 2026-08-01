@@ -51,6 +51,7 @@ export function createInitialState(
       hand: [],
       melds: [],
       contractMet: false,
+      justLaidContract: false,
       buysThisRound: 0,
       roundScores: [],
       isConnected: true,
@@ -78,6 +79,7 @@ export function startRound(state: GameState): GameState {
     player.hand = hand;
     player.melds = [];
     player.contractMet = false;
+    player.justLaidContract = false;
     player.buysThisRound = 0;
     deck = remaining;
   }
@@ -111,9 +113,9 @@ export function resolveBuyWindow(state: GameState): GameState {
     const buyerId = s.pendingBuyRequests[0];
     const buyer = s.players.find((p) => p.id === buyerId);
     if (buyer) {
-      // Enforce round-10 single-buy rule
+      // Enforce round-12 (internal 7) single-buy rule
       const canBuy =
-        s.round < 10 || buyer.buysThisRound === 0;
+        s.round < 7 || buyer.buysThisRound === 0;
 
       if (canBuy) {
         const topDiscard = s.discardPile[s.discardPile.length - 1];
@@ -150,6 +152,8 @@ export function requestBuy(state: GameState, playerId: string): GameState {
   const player = state.players.find((p) => p.id === playerId);
   if (!player) return state;
 
+  // Once contract is met, player may not buy
+  if (player.contractMet) return state;
   // Enforce round-10 single-buy rule
   if (state.round === 7 && player.buysThisRound >= 1) return state;
 
@@ -179,14 +183,15 @@ export function drawFromDeck(state: GameState, playerId: string): GameState {
   s = updatePlayer(s, playerId, (p) => ({
     ...p,
     hand: [...p.hand, ...drawn],
+    justLaidContract: false,    // new turn started — can now extend melds
   })) as GameState;
 
   return {
     ...s,
     deck: remaining,
     phase: 'action',
-    lastDrawnId: drawn[0].id,   // lets discard() detect first-draw reject
-    lastDiscardedById: null,    // drawing from deck clears any prior discard lock
+    lastDrawnId: drawn[0].id,
+    lastDiscardedById: null,
     version: s.version + 1,
   };
 }
@@ -200,6 +205,9 @@ export function takeDiscard(state: GameState, playerId: string): GameState {
   if (state.discardPile.length === 0) return state;
   // Prevent a player from immediately taking back the card they just discarded
   if (state.lastDiscardedById === playerId) return state;
+  // Once contract is met, player may only draw from the deck
+  const taker = state.players.find((p) => p.id === playerId);
+  if (taker?.contractMet) return state;
 
   // Close buy window (active player taking discard cancels it)
   const topCard = state.discardPile[state.discardPile.length - 1];
@@ -216,6 +224,7 @@ export function takeDiscard(state: GameState, playerId: string): GameState {
   s = updatePlayer(s, playerId, (p) => ({
     ...p,
     hand: [...p.hand, topCard],
+    justLaidContract: false,    // new turn started — can now extend melds
   })) as GameState;
 
   return { ...s, lastDiscardedById: null, version: s.version + 1 };
@@ -290,6 +299,7 @@ export function layContract(
     hand: newHand,
     melds: builtMelds,
     contractMet: true,
+    justLaidContract: true,
   })) as GameState;
 
   return { state: { ...s, version: s.version + 1 } };
@@ -309,6 +319,9 @@ export function layToMeld(
   if (!actingPlayer) return { state, error: 'Player not found' };
   if (!actingPlayer.contractMet) {
     return { state, error: 'Must meet your contract before extending melds' };
+  }
+  if (actingPlayer.justLaidContract) {
+    return { state, error: 'You must wait until your next turn to add to melds' };
   }
 
   // Find the meld (could belong to any player)
@@ -374,7 +387,7 @@ export function discard(
   // ── First-draw reject ───────────────────────────────────────────────────────
   // If the player discards the very card they just drew, AND the discard pile was
   // empty (start of round), let others buy it then give the SAME player another draw.
-  if (state.discardPile.length === 0 && state.lastDrawnId === cardId) {
+  if (state.discardPile.length === 0) {
     return {
       state: {
         ...s,
