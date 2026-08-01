@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node zion-server/server.js",
+    "dev": "next dev",
     "build": "next build",
-    "start": "NODE_ENV=production node zion-server/server.js",
-    "start:ws": "node zion-server/ws-server.js",
+    "start": "next start",
+    "start:ws": "node ws-server.js",
     "lint": "next lint"
   },
   "dependencies": {
