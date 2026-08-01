@@ -71,11 +71,42 @@ export function GameTable({
   const [showScoreboard,    setShowScoreboard]    = useState(false);
   const [pendingMeldTarget, setPendingMeldTarget] = useState<{ meldId: string } | null>(null);
   const [selectedForDiscard,setSelectedForDiscard]= useState<string | null>(null);
+  const [showVoicePicker,   setShowVoicePicker]   = useState(false);
+  const [availableVoices,   setAvailableVoices]   = useState<SpeechSynthesisVoice[]>([]);
+  const [selectedVoiceName, setSelectedVoiceName] = useState<string>('');
+
+  // Load voices (Chrome loads them async)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    const load = () => {
+      const v = window.speechSynthesis.getVoices().filter((v) => v.lang.startsWith('en'));
+      setAvailableVoices(v);
+    };
+    load();
+    window.speechSynthesis.addEventListener('voiceschanged', load);
+    return () => window.speechSynthesis.removeEventListener('voiceschanged', load);
+  }, []);
 
   // ── Buy announcement — shown while lastBuyerId is set, cleared when buy resolves ──
   const buyAnnouncement = state.lastBuyerId
     ? { playerId: state.lastBuyerId, name: state.players.find((p) => p.id === state.lastBuyerId)?.name ?? '' }
     : null;
+
+  // ── "BUY" audio — speak the word whenever someone requests a buy ──────────
+  useEffect(() => {
+    if (!state.lastBuyerId) return;
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utt  = new SpeechSynthesisUtterance('BUY');
+    utt.rate   = 0.8;
+    utt.pitch  = 0.9;
+    utt.volume = 1;
+    if (selectedVoiceName) {
+      const voice = window.speechSynthesis.getVoices().find((v) => v.name === selectedVoiceName);
+      if (voice) utt.voice = voice;
+    }
+    window.speechSynthesis.speak(utt);
+  }, [state.lastBuyerId, selectedVoiceName]);
 
   // ── Meld builder state ────────────────────────────────────────────────────
 
@@ -293,7 +324,49 @@ export function GameTable({
             <RoundTracker currentRound={state.round} contractLabel={contract.label} />
           </div>
 
-          <div className="flex items-center justify-end">
+          <div className="flex items-center justify-end gap-2">
+            <div className="relative">
+              <button
+                onClick={() => setShowVoicePicker((v) => !v)}
+                className="px-3 py-1 bg-white/10 hover:bg-white/20 rounded text-xs transition-colors"
+                title="Pick BUY voice"
+              >
+                🔊 Voice
+              </button>
+              {showVoicePicker && (
+                <div className="absolute right-0 top-full mt-1 z-50 bg-gray-900 border border-white/20 rounded-xl shadow-2xl p-2 w-64">
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wide px-1 mb-1">BUY announcement voice</p>
+                  <div className="flex flex-col gap-0.5 max-h-64 overflow-y-auto">
+                    <button
+                      onClick={() => { setSelectedVoiceName(''); setShowVoicePicker(false); }}
+                      className={cn('text-left px-2 py-1.5 rounded text-xs hover:bg-white/10', !selectedVoiceName && 'bg-white/15 font-bold')}
+                    >
+                      Default
+                    </button>
+                    {availableVoices.map((v) => (
+                      <button
+                        key={v.name}
+                        onClick={() => {
+                          setSelectedVoiceName(v.name);
+                          setShowVoicePicker(false);
+                          // Preview the voice
+                          window.speechSynthesis.cancel();
+                          const utt = new SpeechSynthesisUtterance('BUY');
+                          utt.voice  = v;
+                          utt.rate   = 0.8;
+                          utt.pitch  = 0.9;
+                          window.speechSynthesis.speak(utt);
+                        }}
+                        className={cn('text-left px-2 py-1.5 rounded text-xs hover:bg-white/10 leading-tight', selectedVoiceName === v.name && 'bg-white/15 font-bold')}
+                      >
+                        <span className="text-white">{v.name}</span>
+                        <span className="text-gray-500 ml-1">({v.lang})</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
             <button
               onClick={() => setShowScoreboard((v) => !v)}
               className="px-3 py-1 bg-white/10 hover:bg-white/20 rounded text-xs transition-colors"
