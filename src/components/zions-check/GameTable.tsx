@@ -72,6 +72,11 @@ export function GameTable({
   const [pendingMeldTarget, setPendingMeldTarget] = useState<{ meldId: string } | null>(null);
   const [selectedForDiscard,setSelectedForDiscard]= useState<string | null>(null);
 
+  // ── Buy announcement — shown while lastBuyerId is set, cleared when buy resolves ──
+  const buyAnnouncement = state.lastBuyerId
+    ? { playerId: state.lastBuyerId, name: state.players.find((p) => p.id === state.lastBuyerId)?.name ?? '' }
+    : null;
+
   // ── Meld builder state ────────────────────────────────────────────────────
 
   const [meldSlots,    setMeldSlots]    = useState<MeldSlot[]>(() =>
@@ -482,44 +487,52 @@ export function GameTable({
           </div>
 
           {/* Discard */}
-          <div className="flex flex-col items-center gap-1">
-            {topDiscard ? (
-              <CardTile
-                card={topDiscard}
-                size="lg"
-                onClick={canTakeDiscard ? onTakeDiscard : undefined}
-                className={cn(
-                  canTakeDiscard && 'ring-4 ring-amber-400 ring-offset-2 ring-offset-transparent hover:scale-105 active:scale-95',
-                )}
-              />
-            ) : (
-              <div className="w-16 h-24 rounded-xl border-2 border-dashed border-gray-700 flex items-center justify-center">
-                <span className="text-gray-600 text-[10px] text-center leading-tight px-1">
-                  Draw<br />to start
-                </span>
+          <div className="flex items-center gap-3">
+            {/* Card + label column */}
+            <div className="flex flex-col items-center gap-1">
+              {topDiscard ? (
+                <CardTile
+                  card={topDiscard}
+                  size="lg"
+                  onClick={canTakeDiscard ? onTakeDiscard : undefined}
+                  className={cn(
+                    canTakeDiscard && 'ring-4 ring-amber-400 ring-offset-2 ring-offset-transparent hover:scale-105 active:scale-95',
+                  )}
+                />
+              ) : (
+                <div className="w-16 h-24 rounded-xl border-2 border-dashed border-gray-700 flex items-center justify-center">
+                  <span className="text-gray-600 text-[10px] text-center leading-tight px-1">
+                    Draw<br />to start
+                  </span>
+                </div>
+              )}
+              <span className={cn('text-xs font-bold', canTakeDiscard ? 'text-amber-300' : 'text-gray-500')}>
+                {canTakeDiscard ? 'TAKE' : 'DISCARD'}
+              </span>
+
+              {/* Buy button — shown to non-active players during buy window (not if contract already met or someone already bought) */}
+              {state.phase === 'buy_window' && !isMyTurn && topDiscard && state.lastDiscardedById !== myId && !me.contractMet && state.pendingBuyRequests.length === 0 && (() => {
+                const maxBuy = state.round === 7 && (me?.buysThisRound ?? 0) >= 1;
+                return maxBuy ? (
+                  <span className="text-[10px] text-gray-500 mt-1">Max buys used</span>
+                ) : (
+                  <button
+                    onClick={onBuy}
+                    className="mt-1 px-3 py-1 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold rounded-lg"
+                  >
+                    Buy!
+                  </button>
+                );
+              })()}
+            </div>
+
+            {/* BUY! announcement — beside the card */}
+            {buyAnnouncement && (
+              <div className="flex flex-col items-center gap-1 animate-pulse">
+                <span className="text-2xl font-black text-red-400 drop-shadow-lg">BUY!</span>
+                <span className="text-xs text-red-300 font-bold">{buyAnnouncement.name}</span>
               </div>
             )}
-            <span className={cn('text-xs font-bold', canTakeDiscard ? 'text-amber-300' : 'text-gray-500')}>
-              {canTakeDiscard ? 'TAKE' : 'DISCARD'}
-            </span>
-
-            {/* Buy button — shown to non-active players during buy window (not if contract already met) */}
-            {state.phase === 'buy_window' && !isMyTurn && topDiscard && state.lastDiscardedById !== myId && !me.contractMet && (() => {
-              const already = state.pendingBuyRequests.includes(myId);
-              const maxBuy  = state.round === 7 && (me?.buysThisRound ?? 0) >= 1;
-              return already ? (
-                <span className="text-[10px] text-yellow-300 mt-1">Requested…</span>
-              ) : maxBuy ? (
-                <span className="text-[10px] text-gray-500 mt-1">Max buys used</span>
-              ) : (
-                <button
-                  onClick={onBuy}
-                  className="mt-1 px-3 py-1 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold rounded-lg"
-                >
-                  Buy!
-                </button>
-              );
-            })()}
           </div>
         </div>
 

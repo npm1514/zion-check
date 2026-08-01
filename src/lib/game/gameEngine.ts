@@ -61,6 +61,7 @@ export function createInitialState(
     buyWindowOpenAt: null,
     lastDrawnId: null,
     lastDiscardedById: null,
+    lastBuyerId: null,
     hostId,
     version: 0,
   };
@@ -96,6 +97,7 @@ export function startRound(state: GameState): GameState {
     buyWindowOpenAt: null,
     lastDrawnId: null,
     lastDiscardedById: null,
+    lastBuyerId: null,
     version: s.version + 1,
   };
 }
@@ -114,8 +116,7 @@ export function resolveBuyWindow(state: GameState): GameState {
     const buyer = s.players.find((p) => p.id === buyerId);
     if (buyer) {
       // Enforce round-12 (internal 7) single-buy rule
-      const canBuy =
-        s.round < 7 || buyer.buysThisRound === 0;
+      const canBuy = s.round < 7 || buyer.buysThisRound === 0;
 
       if (canBuy) {
         const topDiscard = s.discardPile[s.discardPile.length - 1];
@@ -157,11 +158,13 @@ export function requestBuy(state: GameState, playerId: string): GameState {
   // Enforce round-10 single-buy rule
   if (state.round === 7 && player.buysThisRound >= 1) return state;
 
-  if (state.pendingBuyRequests.includes(playerId)) return state;
+  // Only one buy allowed per discard — first come, first served
+  if (state.pendingBuyRequests.length > 0) return state;
 
   return {
     ...state,
-    pendingBuyRequests: [...state.pendingBuyRequests, playerId],
+    pendingBuyRequests: [playerId],
+    lastBuyerId: playerId,
     version: state.version + 1,
   };
 }
@@ -192,6 +195,7 @@ export function drawFromDeck(state: GameState, playerId: string): GameState {
     phase: 'action',
     lastDrawnId: drawn[0].id,
     lastDiscardedById: null,
+    lastBuyerId: null,
     version: s.version + 1,
   };
 }
@@ -227,7 +231,7 @@ export function takeDiscard(state: GameState, playerId: string): GameState {
     justLaidContract: false,    // new turn started — can now extend melds
   })) as GameState;
 
-  return { ...s, lastDiscardedById: null, version: s.version + 1 };
+  return { ...s, lastDiscardedById: null, lastBuyerId: null, version: s.version + 1 };
 }
 
 // ─── Lay down contract melds ──────────────────────────────────────────────────
@@ -398,6 +402,7 @@ export function discard(
         buyWindowOpenAt: Date.now(),
         lastDrawnId: null,
         lastDiscardedById: playerId,
+        lastBuyerId: null,
         version: s.version + 1,
       },
     };
@@ -441,6 +446,7 @@ export function discard(
       buyWindowOpenAt: Date.now(),
       lastDrawnId: null,
       lastDiscardedById: playerId,
+      lastBuyerId: null,
       version: s.version + 1,
     },
   };

@@ -83,6 +83,7 @@ export interface GameState {
   version: number;                  // optimistic-lock counter
   lastDrawnId: string | null;       // id of the card drawn this action, for first-draw reject
   lastDiscardedById: string | null; // player who made the most recent discard (cannot take it back)
+  lastBuyerId: string | null;       // player who most recently completed a buy (for announcement)
 }
 
 // ─── Scoring ──────────────────────────────────────────────────────────────────
