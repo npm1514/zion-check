@@ -10,7 +10,7 @@ import {
   layContract,
   layToMeld,
   requestBuy,
-  startRound,
+  submitCut as engineSubmitCut,
   swapJoker,
   takeDiscard,
 } from '@/lib/game/gameEngine';
@@ -25,6 +25,7 @@ export interface UseGameReturn {
   startGame:    () => Promise<void>;
   setReady:     () => Promise<void>;
   nextRound:    () => Promise<void>;
+  submitCut:    (cutPosition: number) => Promise<void>;
   requestBuy:   () => Promise<void>;
   drawFromDeck: () => Promise<void>;
   takeDiscard:  () => Promise<void>;
@@ -190,7 +191,15 @@ export function useGame(
   const startGame = useCallback(
     () => apply((s) => {
       if (s.players.length < 2) return { state: s, error: 'Need at least 2 players to start' };
-      return { state: startRound({ ...s, phase: 'lobby' }) };
+      return {
+        state: {
+          ...s,
+          round: 1,
+          phase: 'cutting',
+          perfectCutDealerIdx: null,
+          version: s.version + 1,
+        },
+      };
     }),
     [apply],
   );
@@ -261,6 +270,11 @@ export function useGame(
     [apply],
   );
 
+  const cutDeck = useCallback(
+    (cutPosition: number) => apply((s) => engineSubmitCut(s, myId, cutPosition)),
+    [apply, myId],
+  );
+
   return {
     state,
     loading,
@@ -269,6 +283,7 @@ export function useGame(
     startGame,
     setReady,
     nextRound,
+    submitCut:    cutDeck,
     requestBuy:   reqBuy,
     drawFromDeck: drawDeck,
     takeDiscard:  takeDisc,

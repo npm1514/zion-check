@@ -62,6 +62,7 @@ export function createInitialState(
     lastDrawnId: null,
     lastDiscardedById: null,
     lastBuyerId: null,
+    perfectCutDealerIdx: null,
     hostId,
     version: 0,
   };
@@ -104,7 +105,70 @@ export function startRound(state: GameState): GameState {
     lastDrawnId: null,
     lastDiscardedById: null,
     lastBuyerId: null,
+    perfectCutDealerIdx: null,
     version: s.version + 1,
+  };
+}
+
+// ─── Deck cut ─────────────────────────────────────────────────────────────────
+
+/**
+ * Submitted by the dealer during the 'cutting' phase.
+ * cutPosition = how many cards the dealer takes from the top of the shuffled deck.
+ * Perfect cut: cutPosition === cardsForRound(round) * numPlayers (nothing left after dealing).
+ * Deals cards from the cut portion; any leftover cards become the draw pile.
+ * If perfect: -25 points applied to dealer at round scoring.
+ */
+export function submitCut(
+  state: GameState,
+  dealerId: string,
+  cutPosition: number,
+): { state: GameState; error?: string } {
+  if (state.phase !== 'cutting') return { state, error: 'Not in cutting phase' };
+
+  const n = state.players.length;
+  const dealerIdx = (state.round - 1) % n;
+  if (state.players[dealerIdx].id !== dealerId) {
+    return { state, error: 'Only the dealer can cut the deck' };
+  }
+
+  const cardCount   = cardsForRound(state.round);
+  const cardsNeeded = cardCount * n;
+  const totalDeck   = n <= 4 ? 108 : 162;
+  const safePos     = Math.max(cardsNeeded, Math.min(cutPosition, totalDeck));
+  const isPerfect   = cutPosition === cardsNeeded;
+
+  // Shuffle a fresh deck, then cut: only use the top `safePos` cards for dealing.
+  let deck = createShuffledDeck(n).slice(0, safePos);
+
+  const s = clone(state) as GameState;
+  // First player after dealer
+  s.currentPlayerIdx = s.round % n;
+
+  for (const player of s.players) {
+    const [hand, remaining] = drawCards(deck, cardCount);
+    player.hand             = hand;
+    player.melds            = [];
+    player.contractMet      = false;
+    player.justLaidContract = false;
+    player.buysThisRound    = 0;
+    deck = remaining;
+  }
+
+  return {
+    state: {
+      ...s,
+      phase: 'draw',
+      deck,
+      discardPile: [],
+      pendingBuyRequests: [],
+      buyWindowOpenAt: null,
+      lastDrawnId: null,
+      lastDiscardedById: null,
+      lastBuyerId: null,
+      perfectCutDealerIdx: isPerfect ? dealerIdx : null,
+      version: s.version + 1,
+    },
   };
 }
 
@@ -535,21 +599,31 @@ export function discard(
 // ─── Scoring ──────────────────────────────────────────────────────────────────
 
 function scoreRound(state: GameState): GameState {
-  const players = state.players.map((p) => {
-    const penalty = p.hand.reduce((sum, c) => sum + cardPoints(c), 0);
+  const perfIdx = state.perfectCutDealerIdx;
+  const players = state.players.map((p, i) => {
+    let penalty = p.hand.reduce((sum, c) => sum + cardPoints(c), 0);
+    // Perfect-cut bonus: dealer gets -25 off this round's penalty (can go negative)
+    if (perfIdx !== null && i === perfIdx) penalty -= 25;
     return {
       ...p,
       roundScores: [...p.roundScores, penalty],
     };
   });
-  return { ...state, players, phase: 'round_end' };
+  return { ...state, players, phase: 'round_end', perfectCutDealerIdx: null };
 }
 
 // ─── Advance to next round (called by host after round_end scoreboard) ────────
 
 export function advanceToNextRound(state: GameState): GameState {
   if (state.phase !== 'round_end') return state;
-  return startRound({ ...state, round: state.round + 1 });
+  if (state.round >= MAX_ROUNDS) return state;
+  return {
+    ...state,
+    round: state.round + 1,
+    phase: 'cutting',
+    perfectCutDealerIdx: null,
+    version: state.version + 1,
+  };
 }
 
 // ─── Read-only helpers ────────────────────────────────────────────────────────

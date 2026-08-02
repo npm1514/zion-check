@@ -166,6 +166,7 @@ function GameRoom({ code, myId, myName, isHost }: GameRoomProps) {
       onDiscard={game.discard}
       onBuy={game.requestBuy}
       onNextRound={game.nextRound}
+      onSubmitCut={game.submitCut}
       error={game.error}
     />
   );

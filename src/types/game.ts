@@ -62,6 +62,7 @@ export interface PlayerState {
 
 export type GamePhase =
   | 'lobby'           // waiting for players
+  | 'cutting'         // dealer cuts the deck before dealing
   | 'draw'            // active player must draw
   | 'action'          // active player can meld / extend / discard
   | 'buy_window'      // brief window after a discard where others can buy
@@ -84,6 +85,7 @@ export interface GameState {
   lastDrawnId: string | null;       // id of the card drawn this action, for first-draw reject
   lastDiscardedById: string | null; // player who made the most recent discard (cannot take it back)
   lastBuyerId: string | null;       // player who most recently completed a buy (for announcement)
+  perfectCutDealerIdx: number | null; // set when dealer made a perfect cut this round; applied in scoring
 }
 
 // ─── Scoring ──────────────────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { Card, GameState, Meld, MeldType } from '@/types/game';
 import { cn } from '@/lib/utils';
 import { CardTile } from './CardTile';
+import { CutDeckModal } from './CutDeckModal';
 import { Hand } from './Hand';
 import { MeldDisplay } from './MeldDisplay';
 import { OpponentPanel, AVATARS } from './OpponentPanel';
@@ -36,6 +37,7 @@ interface GameTableProps {
   onDiscard: (cardId: string) => void;
   onBuy: () => void;
   onNextRound: () => void;
+  onSubmitCut: (cutPosition: number) => void;
   error: string | null;
 }
 
@@ -54,6 +56,7 @@ export function GameTable({
   onDiscard,
   onBuy,
   onNextRound,
+  onSubmitCut,
   error,
 }: GameTableProps) {
 
@@ -76,7 +79,7 @@ export function GameTable({
   const myHandSet = useMemo(() => new Set(me.hand.map((c) => `${c.suit}|${c.rank}`)), [me.hand]);
   const swappableByMeld = useMemo<Map<string, Set<number>>>(() => {
     const map = new Map<string, Set<number>>();
-    if (state.phase === 'lobby' || state.phase === 'round_end' || state.phase === 'game_over') return map;
+    if (state.phase === 'lobby' || state.phase === 'cutting' || state.phase === 'round_end' || state.phase === 'game_over') return map;
     for (const player of state.players) {
       for (const meld of player.melds) {
         const swappable = new Set<number>();
@@ -221,6 +224,28 @@ export function GameTable({
     onLayContract(meldSlots.map((s) => ({ type: s.type, cardIds: s.cardIds })));
     setActiveSlotIdx(null);
   }, [canLayContract, meldSlots, onLayContract]);
+
+  // ── Cutting phase ─────────────────────────────────────────────────────────
+
+  if (state.phase === 'cutting') {
+    const dealerIdx  = (state.round - 1) % state.players.length;
+    const cDealer    = state.players[dealerIdx];
+    const isIDealer  = cDealer?.id === myId;
+    return (
+      <div
+        className="h-screen flex items-center justify-center"
+        style={{ background: 'radial-gradient(ellipse at 50% 40%, #166534 0%, #14532d 55%, #0d3d1f 100%)' }}
+      >
+        <CutDeckModal
+          round={state.round}
+          numPlayers={state.players.length}
+          dealerName={cDealer?.name ?? 'Dealer'}
+          isDealer={isIDealer}
+          onSubmit={onSubmitCut}
+        />
+      </div>
+    );
+  }
 
   // ── Round Over screen ─────────────────────────────────────────────────────
 
