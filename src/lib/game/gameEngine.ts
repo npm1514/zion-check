@@ -71,6 +71,12 @@ export function createInitialState(
 
 export function startRound(state: GameState): GameState {
   const s = clone(state) as GameState;
+  const n = s.players.length;
+
+  // Dealer rotates each round: dealer = (round-1) % n, first player = round % n
+  // R1: dealer=P1(0), starts=P2(1) | R2: dealer=P2(1), starts=P3(2) | etc.
+  s.currentPlayerIdx = s.round % n;
+
   const cardCount = cardsForRound(s.round);
   let deck = createShuffledDeck(s.players.length);
 
@@ -360,6 +366,80 @@ export function layToMeld(
 
   return {
     state: { ...s, players: newPlayers, version: s.version + 1 },
+  };
+}
+
+// ─── Swap a real card for a joker in any meld ─────────────────────────────────
+
+/**
+ * Any player may swap a card from their hand for a joker that is substituting
+ * that exact card in any meld — at any time during the game (not just on their turn).
+ */
+export function swapJoker(
+  state:      GameState,
+  playerId:   string,
+  meldId:     string,
+  slotIndex:  number,
+  cardId:     string, // the real card from the player's hand
+): { state: GameState; error?: string } {
+  if (state.phase === 'lobby' || state.phase === 'round_end' || state.phase === 'game_over') {
+    return { state, error: 'Cannot swap during this phase' };
+  }
+
+  const player = state.players.find((p) => p.id === playerId);
+  if (!player) return { state, error: 'Player not found' };
+
+  const card = player.hand.find((c) => c.id === cardId);
+  if (!card) return { state, error: 'Card not in hand' };
+
+  // Locate the meld and slot
+  let meldOwnerIdx = -1;
+  let meldIdx      = -1;
+  for (let pi = 0; pi < state.players.length; pi++) {
+    const mi = state.players[pi].melds.findIndex((m) => m.id === meldId);
+    if (mi !== -1) { meldOwnerIdx = pi; meldIdx = mi; break; }
+  }
+  if (meldOwnerIdx === -1) return { state, error: 'Meld not found' };
+
+  const slot = state.players[meldOwnerIdx].melds[meldIdx].slots[slotIndex];
+  if (!slot) return { state, error: 'Slot not found' };
+
+  if (!slot.card.isJoker || !slot.substituting) {
+    return { state, error: 'No swappable joker in that slot' };
+  }
+
+  if (card.suit !== slot.substituting.suit || card.rank !== slot.substituting.rank) {
+    return { state, error: 'Your card does not match what this joker is substituting' };
+  }
+
+  const jokerCard = slot.card;
+
+  // Replace joker in meld with the real card
+  const newPlayers = state.players.map((p, pi) => {
+    if (pi === meldOwnerIdx) {
+      return {
+        ...p,
+        melds: p.melds.map((m, mi) => mi === meldIdx ? {
+          ...m,
+          slots: m.slots.map((sl, si) => si === slotIndex
+            ? { card, substituting: undefined }
+            : sl,
+          ),
+        } : m),
+      };
+    }
+    // Give joker to swapping player, remove their real card
+    if (p.id === playerId) {
+      return {
+        ...p,
+        hand: [...p.hand.filter((c) => c.id !== cardId), jokerCard],
+      };
+    }
+    return p;
+  });
+
+  return {
+    state: { ...clone(state), players: newPlayers, version: state.version + 1 },
   };
 }
 

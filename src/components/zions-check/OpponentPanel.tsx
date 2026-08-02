@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 interface OpponentPanelProps {
   player: PlayerState;
   isCurrentPlayer: boolean;
+  isDealer: boolean;
   contractLabel: string;
 }
 
@@ -21,7 +22,7 @@ export const PLAYER_COLORS = [
 
 export const AVATARS = ['🧑', '👩', '👴', '👵', '🧔', '👱', '🧕'];
 
-export function OpponentPanel({ player, isCurrentPlayer, contractLabel }: OpponentPanelProps) {
+export function OpponentPanel({ player, isCurrentPlayer, isDealer, contractLabel }: OpponentPanelProps) {
   const colorIdx = player.seatIndex % PLAYER_COLORS.length;
   const avatar   = AVATARS[player.seatIndex % AVATARS.length];
 
@@ -42,6 +43,7 @@ export function OpponentPanel({ player, isCurrentPlayer, contractLabel }: Oppone
       )}>
         <span className="text-sm leading-none">{avatar}</span>
         <span className="text-xs font-bold text-white truncate flex-1">{player.name}</span>
+        {isDealer && <span className="text-[8px] font-bold text-white/70 shrink-0">🃏</span>}
         {isCurrentPlayer && (
           <span className="text-yellow-300 text-[9px] font-bold animate-pulse shrink-0">▶</span>
         )}

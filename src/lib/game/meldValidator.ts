@@ -6,6 +6,11 @@ const RANK_ORDER: Rank[] = [
   '2','3','4','5','6','7','8','9','10','J','Q','K','A',
 ];
 
+// Ace-low ordering: A 2 3 4 5 6 7 8 9 10 J Q K
+const RANK_ORDER_ACE_LOW: Rank[] = [
+  'A','2','3','4','5','6','7','8','9','10','J','Q','K',
+];
+
 export function rankIndex(rank: Rank): number {
   return RANK_ORDER.indexOf(rank);
 }
@@ -34,44 +39,40 @@ export function isValidSet(cards: Card[]): boolean {
 }
 
 /**
- * A valid RUN has:
- * - All non-joker cards sharing the same suit
- * - Consecutive ranks with jokers filling any gaps
- * - Minimum 4 cards total
- * - No wrap-around (Ace is only high: …Q K A, never A 2 3…)
+ * Core run validator for a given rank ordering.
+ * Ace-high: RANK_ORDER (default). Ace-low: RANK_ORDER_ACE_LOW.
  */
-export function isValidRun(cards: Card[]): { valid: boolean; slots: MeldSlot[] } {
-  if (cards.length < 4) return { valid: false, slots: [] };
-
-  const naturals = cards.filter((c) => !c.isJoker);
-  if (naturals.length === 0) return { valid: false, slots: [] };
-
+function tryRunWithOrder(
+  cards: Card[],
+  rankOrder: Rank[],
+): { valid: boolean; slots: MeldSlot[] } {
+  const naturals   = cards.filter((c) => !c.isJoker);
   const jokerCount = cards.filter((c) => c.isJoker).length;
 
-  // All naturals must share the same suit
   const suit = naturals[0].suit as Suit;
   if (naturals.some((c) => c.suit !== suit)) return { valid: false, slots: [] };
 
-  const indices = naturals.map((c) => rankIndex(c.rank as Rank));
+  const idxOf = (rank: Rank) => rankOrder.indexOf(rank);
+  const indices = naturals.map((c) => idxOf(c.rank as Rank));
 
-  // Duplicate ranks are not allowed in a run
+  // Rank must exist in this ordering (e.g. Ace must be present in ace-low order)
+  if (indices.some((i) => i === -1)) return { valid: false, slots: [] };
+
+  // Duplicate ranks not allowed in a run
   if (new Set(indices).size < naturals.length) return { valid: false, slots: [] };
 
   const minIdx = Math.min(...indices);
   const maxIdx = Math.max(...indices);
-  const span = maxIdx - minIdx + 1;
+  const span   = maxIdx - minIdx + 1;
 
-  // The run must fit within cards.length positions
   if (span > cards.length) return { valid: false, slots: [] };
   if (cards.length - span > jokerCount) return { valid: false, slots: [] };
 
-  const naturalMap = new Map(naturals.map((c) => [rankIndex(c.rank as Rank), c]));
-  const jokers = cards.filter((c) => c.isJoker);
+  const naturalMap = new Map(naturals.map((c) => [idxOf(c.rank as Rank), c]));
+  const jokers     = cards.filter((c) => c.isJoker);
 
-  // Try every valid starting position so jokers can extend left OR right.
-  // e.g. Q-K-A + Joker → J-Q-K-A (joker must go left, not past the end of ranks)
   const minStart = Math.max(0, maxIdx - cards.length + 1);
-  const maxStart = Math.min(minIdx, RANK_ORDER.length - cards.length);
+  const maxStart = Math.min(minIdx, rankOrder.length - cards.length);
 
   for (let startIdx = minStart; startIdx <= maxStart; startIdx++) {
     let jokerIdx = 0;
@@ -79,8 +80,8 @@ export function isValidRun(cards: Card[]): { valid: boolean; slots: MeldSlot[] }
     let ok = true;
 
     for (let i = 0; i < cards.length; i++) {
-      const ri = startIdx + i;
-      const rank = RANK_ORDER[ri];
+      const ri   = startIdx + i;
+      const rank = rankOrder[ri];
       if (naturalMap.has(ri)) {
         slots.push({ card: naturalMap.get(ri)! });
       } else {
@@ -92,6 +93,31 @@ export function isValidRun(cards: Card[]): { valid: boolean; slots: MeldSlot[] }
     if (ok && jokerIdx === jokers.length) {
       return { valid: true, slots };
     }
+  }
+
+  return { valid: false, slots: [] };
+}
+
+/**
+ * A valid RUN has:
+ * - All non-joker cards sharing the same suit
+ * - Consecutive ranks with jokers filling any gaps
+ * - Minimum 4 cards total
+ * - Ace may be high (…Q K A) OR low (A 2 3 4…), but not both ends (no wrap-around)
+ */
+export function isValidRun(cards: Card[]): { valid: boolean; slots: MeldSlot[] } {
+  if (cards.length < 4) return { valid: false, slots: [] };
+
+  const naturals = cards.filter((c) => !c.isJoker);
+  if (naturals.length === 0) return { valid: false, slots: [] };
+
+  // Try ace-high first (standard)
+  const high = tryRunWithOrder(cards, RANK_ORDER);
+  if (high.valid) return high;
+
+  // If an ace is present, also try ace-low (A 2 3 4…)
+  if (naturals.some((c) => c.rank === 'A')) {
+    return tryRunWithOrder(cards, RANK_ORDER_ACE_LOW);
   }
 
   return { valid: false, slots: [] };

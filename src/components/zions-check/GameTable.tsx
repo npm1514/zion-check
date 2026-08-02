@@ -32,6 +32,7 @@ interface GameTableProps {
   onTakeDiscard: () => void;
   onLayContract: (melds: { type: MeldType; cardIds: string[] }[]) => void;
   onLayToMeld: (meldId: string, cardId: string) => void;
+  onSwapJoker: (meldId: string, slotIndex: number, cardId: string) => void;
   onDiscard: (cardId: string) => void;
   onBuy: () => void;
   onNextRound: () => void;
@@ -49,6 +50,7 @@ export function GameTable({
   onTakeDiscard,
   onLayContract,
   onLayToMeld,
+  onSwapJoker,
   onDiscard,
   onBuy,
   onNextRound,
@@ -65,6 +67,44 @@ export function GameTable({
   const canDraw        = isMyTurn && (state.phase === 'draw' || state.phase === 'buy_window');
   const canTakeDiscard = isMyTurn && (state.phase === 'draw' || state.phase === 'buy_window') && !!topDiscard && state.lastDiscardedById !== myId && !me.contractMet;
   const canAct        = isMyTurn && state.phase === 'action';
+  const dealerIdx     = (state.round - 1) % state.players.length;
+  const dealer        = state.players[dealerIdx];
+
+  // ── Joker swap — available any time during active gameplay ───────────────────
+  // For each meld on the table, compute which slot indices the current player
+  // can swap (they hold the exact card the joker is substituting).
+  const myHandSet = useMemo(() => new Set(me.hand.map((c) => `${c.suit}|${c.rank}`)), [me.hand]);
+  const swappableByMeld = useMemo<Map<string, Set<number>>>(() => {
+    const map = new Map<string, Set<number>>();
+    if (state.phase === 'lobby' || state.phase === 'round_end' || state.phase === 'game_over') return map;
+    for (const player of state.players) {
+      for (const meld of player.melds) {
+        const swappable = new Set<number>();
+        meld.slots.forEach((slot, i) => {
+          if (slot.card.isJoker && slot.substituting) {
+            const key = `${slot.substituting.suit}|${slot.substituting.rank}`;
+            if (myHandSet.has(key)) swappable.add(i);
+          }
+        });
+        if (swappable.size > 0) map.set(meld.id, swappable);
+      }
+    }
+    return map;
+  }, [state, myHandSet]);
+
+  const handleSwapJoker = useCallback((meldId: string, slotIndex: number) => {
+    // Find the card in hand that matches this slot
+    const slot = state.players
+      .flatMap((p) => p.melds)
+      .find((m) => m.id === meldId)
+      ?.slots[slotIndex];
+    if (!slot?.substituting) return;
+    const card = me.hand.find(
+      (c) => c.suit === slot.substituting!.suit && c.rank === slot.substituting!.rank,
+    );
+    if (!card) return;
+    onSwapJoker(meldId, slotIndex, card.id);
+  }, [state, me.hand, onSwapJoker]);
 
   // ── UI state ─────────────────────────────────────────────────────────────────
 
@@ -292,11 +332,15 @@ export function GameTable({
       : canDraw
         ? state.discardPile.length === 0
           ? '🎴 Draw from the deck to start the round'
-          : '🎴 Your turn — click the deck or take the discard'
+          : me.contractMet
+            ? '🎴 Your turn — draw from the deck'
+            : '🎴 Your turn — click the deck or take the discard'
         : firstDrawPending
           ? '👀 Keep your draw or discard it to let others buy — then draw again'
           : me.contractMet
-            ? '✓ Contract down — add cards to melds or discard'
+            ? me.justLaidContract
+              ? '✅ Contract laid! Discard a card — you can add to melds next turn'
+              : '✓ Contract down — add cards to melds or discard'
             : '📋 Your turn — fill your contract slots then lay them down'
     : `⏳ Waiting for ${currentPlayer?.name}…`;
 
@@ -393,41 +437,56 @@ export function GameTable({
             <OpponentPanel
               player={player}
               isCurrentPlayer={currentPlayer?.id === player.id}
+              isDealer={dealer?.id === player.id}
               contractLabel={contract.label}
             />
 
             {/* Their melds below the panel */}
             {player.melds.length > 0 && (
               <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
-                {player.melds.map((meld) => (
-                  <div key={meld.id} className="flex items-start gap-1 flex-wrap">
-                    <div className="flex flex-wrap gap-0.5">
-                      {meld.slots.map((slot, i) => (
-                        <div key={i} className="relative">
-                          <CardTile card={slot.card} size="sm" />
-                          {slot.substituting && (
-                            <span className="absolute -bottom-0.5 left-0 right-0 text-center text-[7px] bg-purple-700 text-white rounded leading-none">
-                              {slot.substituting.rank}
-                            </span>
+                {player.melds.map((meld) => {
+                  const swappable = swappableByMeld.get(meld.id);
+                  return (
+                    <div key={meld.id} className="flex items-start gap-1 flex-wrap">
+                      <div className="flex flex-wrap gap-0.5">
+                        {meld.slots.map((slot, i) => {
+                          const canSwap = swappable?.has(i);
+                          return (
+                            <div key={i} className="relative">
+                              <CardTile
+                                card={slot.card}
+                                size="sm"
+                                className={cn(canSwap && 'ring-2 ring-green-400 cursor-pointer hover:scale-110 transition-transform')}
+                                onClick={canSwap ? () => handleSwapJoker(meld.id, i) : undefined}
+                              />
+                              {slot.substituting && (
+                                <span className="absolute -bottom-0.5 left-0 right-0 text-center text-[7px] bg-purple-700 text-white rounded leading-none">
+                                  {slot.substituting.rank}
+                                </span>
+                              )}
+                              {canSwap && (
+                                <span className="absolute -top-0.5 -right-0.5 bg-green-500 text-white text-[6px] px-0.5 rounded-full pointer-events-none font-bold">⇄</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {canAct && me.contractMet && !me.justLaidContract && (
+                        <button
+                          onClick={() => { setPendingMeldTarget({ meldId: meld.id }); setSelectedForDiscard(null); }}
+                          className={cn(
+                            'text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0 mt-0.5',
+                            pendingMeldTarget?.meldId === meld.id
+                              ? 'bg-yellow-400 text-black'
+                              : 'bg-white/20 hover:bg-white/30 text-white',
                           )}
-                        </div>
-                      ))}
+                        >
+                          + Add
+                        </button>
+                      )}
                     </div>
-                    {canAct && me.contractMet && !me.justLaidContract && (
-                      <button
-                        onClick={() => { setPendingMeldTarget({ meldId: meld.id }); setSelectedForDiscard(null); }}
-                        className={cn(
-                          'text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0 mt-0.5',
-                          pendingMeldTarget?.meldId === meld.id
-                            ? 'bg-yellow-400 text-black'
-                            : 'bg-white/20 hover:bg-white/30 text-white',
-                        )}
-                      >
-                        + Add
-                      </button>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -446,98 +505,6 @@ export function GameTable({
       <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 px-3 pb-2">
 
 
-        {/* Meld staging (action phase, contract not yet met) */}
-        {canAct && !me.contractMet && (
-          <div className="shrink-0 bg-black/30 border border-white/10 rounded-xl p-3">
-            <p className="text-[11px] text-gray-400 uppercase tracking-wide mb-2">
-              Stage your contract
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {meldSlots.map((slot, idx) => {
-                const isActive  = activeSlotIdx === idx;
-                const isFull    = slot.cardIds.length >= slot.minSize;
-                const slotCards = slot.cardIds
-                  .map((id) => me.hand.find((c) => c.id === id))
-                  .filter((c): c is Card => !!c);
-
-                return (
-                  <div
-                    key={idx}
-                    onClick={() => setActiveSlotIdx(isActive ? null : idx)}
-                    className={cn(
-                      'flex flex-col gap-1.5 p-2 rounded-xl border-2 cursor-pointer',
-                      'transition-all min-w-[120px] flex-1',
-                      isActive  && 'border-yellow-400 bg-yellow-900/30 shadow-lg shadow-yellow-900/30',
-                      !isActive && isFull  && 'border-green-500 bg-green-900/30',
-                      !isActive && !isFull && 'border-white/10 bg-black/20 hover:border-white/30',
-                    )}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-gray-300">
-                        {slot.type === 'set' ? '📋 Set' : '➡️ Run'} {slot.minSize}+
-                      </span>
-                      <span className="text-[10px]">
-                        {isFull
-                          ? <span className="text-green-400">✓</span>
-                          : isActive
-                            ? <span className="text-yellow-300">active</span>
-                            : <span className="text-gray-500">{slot.minSize - slotCards.length} left</span>}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap gap-1 min-h-[84px] items-start content-start">
-                      {slotCards.map((card) => (
-                        <div
-                          key={card.id}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setMeldSlots((prev) =>
-                              prev.map((s) => ({
-                                ...s, cardIds: s.cardIds.filter((id) => id !== card.id),
-                              })),
-                            );
-                          }}
-                          title="Click to remove"
-                          className="cursor-pointer hover:opacity-70 transition-opacity"
-                        >
-                          <CardTile card={card} size="md" />
-                        </div>
-                      ))}
-                      {Array.from({ length: Math.max(0, slot.minSize - slotCards.length) }).map((_, i) => (
-                        <div
-                          key={`ph-${i}`}
-                          className={cn(
-                            'w-14 h-20 rounded-lg border-2 border-dashed flex items-center justify-center',
-                            isActive ? 'border-yellow-400/60 bg-yellow-900/10' : 'border-white/10',
-                          )}
-                        >
-                          {isActive && i === 0 && (
-                            <span className="text-yellow-400 text-[9px] text-center leading-tight px-1">
-                              tap<br />card
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <button
-              onClick={handleLayContract}
-              disabled={!canLayContract}
-              className={cn(
-                'mt-2 w-full py-2 text-sm font-bold rounded-lg transition-colors',
-                canLayContract
-                  ? 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-900/50'
-                  : 'bg-white/5 text-gray-600 cursor-default',
-              )}
-            >
-              {canLayContract ? '✓ Lay Contract Down' : `Fill all ${meldSlots.length} slots first`}
-            </button>
-          </div>
-        )}
 
         {/* ── Deck + Discard centered ──────────────────────────────────────── */}
         <div className="flex justify-center items-start gap-8 py-2">
@@ -629,6 +596,8 @@ export function GameTable({
                     ? (meldId) => { setPendingMeldTarget({ meldId }); setSelectedForDiscard(null); }
                     : undefined
                 }
+                swappableSlots={swappableByMeld.get(meld.id)}
+                onSwap={handleSwapJoker}
               />
             ))}
           </div>
@@ -652,9 +621,95 @@ export function GameTable({
         )}>
           <span className="text-sm leading-none">{AVATARS[me.seatIndex % AVATARS.length]}</span>
           <span className="text-xs font-bold text-white">{me.name} <span className="text-gray-400 font-normal">(you)</span></span>
+          {dealer?.id === myId && <span className="text-[9px] font-bold bg-white/20 px-1.5 py-0.5 rounded text-white">🃏 DEALER</span>}
           {isMyTurn && <span className="text-yellow-300 text-[9px] font-bold animate-pulse">YOUR TURN</span>}
           <span className="text-[10px] text-gray-300">🃏{me.hand.length}</span>
         </div>
+
+        {/* Meld staging — shown below name bar when contract not yet met */}
+        {canAct && !me.contractMet && (
+          <div className="bg-black/30 border-b border-white/10 px-3 py-2">
+            <p className="text-[11px] text-gray-400 uppercase tracking-wide mb-2">Stage your contract</p>
+            <div className="flex gap-2">
+              {meldSlots.map((slot, idx) => {
+                const isActive  = activeSlotIdx === idx;
+                const isFull    = slot.cardIds.length >= slot.minSize;
+                const slotCards = slot.cardIds
+                  .map((id) => me.hand.find((c) => c.id === id))
+                  .filter((c): c is Card => !!c);
+
+                return (
+                  <div
+                    key={idx}
+                    onClick={() => setActiveSlotIdx(isActive ? null : idx)}
+                    className={cn(
+                      'flex flex-col gap-1.5 p-2 rounded-xl border-2 cursor-pointer transition-all shrink-0',
+                      isActive  && 'border-yellow-400 bg-yellow-900/30 shadow-lg shadow-yellow-900/30',
+                      !isActive && isFull  && 'border-green-500 bg-green-900/30',
+                      !isActive && !isFull && 'border-white/10 bg-black/20 hover:border-white/30',
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-gray-300">
+                        {slot.type === 'set' ? '📋 Set' : '➡️ Run'} {slot.minSize}+
+                      </span>
+                      <span className="text-[10px]">
+                        {isFull
+                          ? <span className="text-green-400">✓</span>
+                          : isActive
+                            ? <span className="text-yellow-300">active</span>
+                            : <span className="text-gray-500">{slot.minSize - slotCards.length} left</span>}
+                      </span>
+                    </div>
+                    <div className="flex gap-1 min-h-[84px] items-start">
+                      {slotCards.map((card) => (
+                        <div
+                          key={card.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMeldSlots((prev) =>
+                              prev.map((s) => ({ ...s, cardIds: s.cardIds.filter((id) => id !== card.id) })),
+                            );
+                          }}
+                          title="Click to remove"
+                          className="cursor-pointer hover:opacity-70 transition-opacity"
+                        >
+                          <CardTile card={card} size="md" />
+                        </div>
+                      ))}
+                      {Array.from({ length: Math.max(0, slot.minSize - slotCards.length) }).map((_, i) => (
+                        <div
+                          key={`ph-${i}`}
+                          className={cn(
+                            'w-14 h-20 rounded-lg border-2 border-dashed flex items-center justify-center',
+                            isActive ? 'border-yellow-400/60 bg-yellow-900/10' : 'border-white/10',
+                          )}
+                        >
+                          {isActive && i === 0 && (
+                            <span className="text-yellow-400 text-[9px] text-center leading-tight px-1">tap<br />card</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <button
+              onClick={handleLayContract}
+              disabled={!canLayContract}
+              className={cn(
+                'mt-2 w-full py-2 text-sm font-bold rounded-lg transition-colors',
+                canLayContract
+                  ? 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-900/50'
+                  : 'bg-white/5 text-gray-600 cursor-default',
+              )}
+            >
+              {canLayContract ? '✓ Lay Contract Down' : `Fill all ${meldSlots.length} slots first`}
+            </button>
+          </div>
+        )}
+
         <Hand
           cards={me.hand}
           canAct={canAct}

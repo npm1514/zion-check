@@ -162,6 +162,7 @@ function GameRoom({ code, myId, myName, isHost }: GameRoomProps) {
       onTakeDiscard={game.takeDiscard}
       onLayContract={game.layContract}
       onLayToMeld={game.layToMeld}
+      onSwapJoker={game.swapJoker}
       onDiscard={game.discard}
       onBuy={game.requestBuy}
       onNextRound={game.nextRound}

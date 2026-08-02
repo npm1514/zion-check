@@ -11,6 +11,7 @@ import {
   layToMeld,
   requestBuy,
   startRound,
+  swapJoker,
   takeDiscard,
 } from '@/lib/game/gameEngine';
 
@@ -29,6 +30,7 @@ export interface UseGameReturn {
   takeDiscard:  () => Promise<void>;
   layContract:  (melds: { type: MeldType; cardIds: string[] }[]) => Promise<void>;
   layToMeld:    (meldId: string, cardId: string) => Promise<void>;
+  swapJoker:    (meldId: string, slotIndex: number, cardId: string) => Promise<void>;
   discard:      (cardId: string) => Promise<void>;
 }
 
@@ -243,6 +245,12 @@ export function useGame(
     [apply, myId],
   );
 
+  const swapJok = useCallback(
+    (meldId: string, slotIndex: number, cardId: string) =>
+      apply((s) => swapJoker(s, myId, meldId, slotIndex, cardId)),
+    [apply, myId],
+  );
+
   const discardCard = useCallback(
     (cardId: string) => apply((s) => discard(s, myId, cardId)),
     [apply, myId],
@@ -266,6 +274,7 @@ export function useGame(
     takeDiscard:  takeDisc,
     layContract:  layContr,
     layToMeld:    layMeld,
+    swapJoker:    swapJok,
     discard:      discardCard,
   };
 }
