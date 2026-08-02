@@ -20,7 +20,7 @@ const SIZE: Record<CardSize, { card: string; rank: string; symbol: string }> = {
   md: { card: 'w-14 h-20', rank: 'text-xs',     symbol: 'text-2xl'  },
   lg: { card: 'w-16 h-24', rank: 'text-sm',     symbol: 'text-3xl'  },
 };
-
+ 
 const SUIT_SYMBOLS: Record<string, string> = {
   hearts:   '♥',
   diamonds: '♦',
