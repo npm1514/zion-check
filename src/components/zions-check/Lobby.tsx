@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { GameState } from '@/types/game';
 
 interface LobbyProps {
@@ -16,8 +17,7 @@ export function Lobby({ roomCode, state, myId, onReady, onStart }: LobbyProps) {
   return (
     <div className="min-h-screen bg-green-900 flex items-center justify-center p-6">
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
-        <h1 className="text-3xl font-black text-center mb-1">🃏 Zion&apos;s Check</h1>
-        <p className="text-center text-gray-500 mb-6 text-sm">Shanghai Rummy · Custom Rules</p>
+        <h1 className="text-3xl font-black text-center mb-1">🃏 Zions Check</h1>
 
         {/* Room code */}
         <div className="bg-gray-100 rounded-xl p-4 text-center mb-6">
@@ -47,6 +47,17 @@ export function Lobby({ roomCode, state, myId, onReady, onStart }: LobbyProps) {
           ))}
         </div>
 
+        <div className="text-center mb-2">
+          <Link
+            href="/rules"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-green-700 hover:text-green-600 font-medium underline underline-offset-2"
+          >
+            📖 How to play ↗
+          </Link>
+        </div>
+
         {/* Actions */}
         <div className="flex flex-col gap-3">
           {!me?.isReady && (
@@ -69,14 +80,6 @@ export function Lobby({ roomCode, state, myId, onReady, onStart }: LobbyProps) {
                 : 'Start Game →'}
             </button>
           )}
-        </div>
-
-        {/* Rules summary */}
-        <div className="mt-6 pt-4 border-t border-gray-100 text-xs text-gray-400 space-y-1">
-          <p>• 10 rounds · cards dealt: R1=6, R2=7, … R10=15</p>
-          <p>• Buy = take discard + 1 penalty card · Round 10: max 1 buy</p>
-          <p>• Scoring: 2–9 = 5pts · 10/J/Q/K = 10pts · A = 15pts · Joker = 50pts</p>
-          <p>• Cannot discard a Joker or a card that can replace one on the table</p>
         </div>
       </div>
     </div>

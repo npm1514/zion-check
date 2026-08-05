@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { generateRoomCode } from '@/lib/supabase/gameService';
 import { nanoid } from 'nanoid';
 
@@ -55,8 +56,7 @@ export default function GameLandingPage() {
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm flex flex-col gap-6">
         <div className="text-center">
           <h1 className="text-4xl font-black mb-1">🃏</h1>
-          <h1 className="text-3xl font-black">Zion&apos;s Check</h1>
-          <p className="text-gray-500 text-sm mt-1">Shanghai Rummy · Family Edition</p>
+          <h1 className="text-3xl font-black">Zions Check</h1>
         </div>
 
         {/* Name input */}
@@ -108,14 +108,16 @@ export default function GameLandingPage() {
 
         {error && <p className="text-red-500 text-sm text-center">{error}</p>}
 
-        {/* Rules mini-cheatsheet */}
-        <div className="border-t border-gray-100 pt-4 text-xs text-gray-400 space-y-1">
-          <p className="font-semibold text-gray-600">Quick rules:</p>
-          <p>• 10 rounds · R1 deals 6 cards, +1 each round</p>
-          <p>• Buy the discard out-of-turn = +1 penalty card</p>
-          <p>• Round 10: only 1 buy allowed</p>
-          <p>• 2–9 = 5pts · 10/J/Q/K = 10pts · A = 15pts · Joker = 50pts</p>
-          <p>• Lowest score wins!</p>
+        {/* Rules link */}
+        <div className="border-t border-gray-100 pt-4 text-center">
+          <Link
+            href="/rules"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-green-700 hover:text-green-600 font-medium underline underline-offset-2"
+          >
+            📖 How to play ↗
+          </Link>
         </div>
       </div>
     </div>

@@ -13,13 +13,11 @@ interface CutDeckModalProps {
 
 export function CutDeckModal({ round, numPlayers, dealerName, isDealer, onSubmit }: CutDeckModalProps) {
   const totalDeck    = numPlayers <= 4 ? 108 : 162;
-  const cardsNeeded  = cardsForRound(round) * numPlayers;
   const displayRound = round + 5;
 
   const [cutPos, setCutPos] = useState(Math.floor(totalDeck / 2));
   const deckRef = useRef<HTMLDivElement>(null);
 
-  const isPerfect   = cutPos === cardsNeeded;
   const cutFraction = cutPos / totalDeck; // 0 = top, 1 = bottom
 
   const deckLines = useMemo(() => Array.from({ length: 40 }), []);
@@ -94,7 +92,7 @@ export function CutDeckModal({ round, numPlayers, dealerName, isDealer, onSubmit
                 width: 140,
                 height: 260,
                 background: '#1a2e1a',
-                border: `1px solid ${isPerfect ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.1)'}`,
+                border: '1px solid rgba(255,255,255,0.1)',
                 touchAction: 'none',
               }}
               onPointerDown={onPointerDown}
@@ -105,9 +103,7 @@ export function CutDeckModal({ round, numPlayers, dealerName, isDealer, onSubmit
                 className="absolute top-0 left-0 right-0"
                 style={{
                   height: `${cutFraction * 100}%`,
-                  background: isPerfect
-                    ? 'linear-gradient(180deg, rgba(34,197,94,0.35) 0%, rgba(34,197,94,0.15) 100%)'
-                    : 'linear-gradient(180deg, rgba(96,165,250,0.3) 0%, rgba(96,165,250,0.12) 100%)',
+                  background: 'linear-gradient(180deg, rgba(96,165,250,0.3) 0%, rgba(96,165,250,0.12) 100%)',
                   transition: 'height 0ms',
                 }}
               />
@@ -121,7 +117,7 @@ export function CutDeckModal({ round, numPlayers, dealerName, isDealer, onSubmit
                     top: `${((i + 0.5) / deckLines.length) * 100}%`,
                     height: 1,
                     background: (i + 0.5) / deckLines.length < cutFraction
-                      ? (isPerfect ? 'rgba(134,239,172,0.55)' : 'rgba(147,197,253,0.45)')
+                      ? 'rgba(147,197,253,0.45)'
                       : 'rgba(255,255,255,0.1)',
                   }}
                 />
@@ -133,8 +129,8 @@ export function CutDeckModal({ round, numPlayers, dealerName, isDealer, onSubmit
                 style={{
                   top: `${cutFraction * 100}%`,
                   height: 2,
-                  background: isPerfect ? '#22c55e' : '#60a5fa',
-                  boxShadow: isPerfect ? '0 0 8px #22c55e' : '0 0 5px #60a5fa',
+                  background: '#60a5fa',
+                  boxShadow: '0 0 5px #60a5fa',
                   transform: 'translateY(-1px)',
                 }}
               />
@@ -151,24 +147,13 @@ export function CutDeckModal({ round, numPlayers, dealerName, isDealer, onSubmit
           </div>
         </div>
 
-        {/* Perfect cut celebration */}
-        {isPerfect && (
-          <div className="text-center mb-4">
-            <div className="text-green-400 font-black text-lg">✨ Perfect Cut!</div>
-            <div className="text-green-300 text-xs mt-0.5 font-bold">−25 pts bonus!</div>
-          </div>
-        )}
-
         {/* Deal button */}
         <button
           onClick={() => onSubmit(cutPos)}
           className="w-full py-3 font-black text-base rounded-xl shadow-lg transition-colors"
-          style={{
-            background: isPerfect ? '#16a34a' : '#1d4ed8',
-            color: 'white',
-          }}
+          style={{ background: '#1d4ed8', color: 'white' }}
         >
-          {isPerfect ? '✨ Deal with Perfect Cut!' : '🃏 Cut & Deal'}
+          🃏 Cut &amp; Deal
         </button>
       </div>
     </div>

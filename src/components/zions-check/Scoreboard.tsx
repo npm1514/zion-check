@@ -46,9 +46,22 @@ export function Scoreboard({ state }: ScoreboardProps) {
                   <span className="ml-1 text-[10px] bg-green-700 px-1 rounded">✓ down</span>
                 )}
               </td>
-              {player.roundScores.map((score, ri) => (
-                <td key={ri} className="text-center py-1 text-gray-300 text-xs">{score}</td>
-              ))}
+              {player.roundScores.map((score, ri) => {
+                const roundNum = ri + 1;
+                const playerIdx = state.players.findIndex(p => p.id === player.id);
+                const hasPerfectCut = state.perfectCutBonusRounds.some(
+                  b => b.round === roundNum && b.playerIdx === playerIdx
+                );
+                return (
+                  <td key={ri} className="text-center py-1 text-gray-300 text-xs">
+                    {hasPerfectCut ? (
+                      <span title="Perfect cut! −25 pts bonus">
+                        {score}<span className="text-[9px] ml-0.5">✨</span>
+                      </span>
+                    ) : score}
+                  </td>
+                );
+              })}
               <td className="text-right py-1 pr-1 font-bold">{totalScore(player)}</td>
             </tr>
           ))}

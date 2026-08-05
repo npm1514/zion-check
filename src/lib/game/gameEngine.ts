@@ -63,6 +63,8 @@ export function createInitialState(
     lastDiscardedById: null,
     lastBuyerId: null,
     perfectCutDealerIdx: null,
+    perfectCutBonusRounds: [],
+    lastCutResult: null,
     hostId,
     version: 0,
   };
@@ -106,6 +108,7 @@ export function startRound(state: GameState): GameState {
     lastDiscardedById: null,
     lastBuyerId: null,
     perfectCutDealerIdx: null,
+    lastCutResult: null,
     version: s.version + 1,
   };
 }
@@ -167,6 +170,11 @@ export function submitCut(
       lastDiscardedById: null,
       lastBuyerId: null,
       perfectCutDealerIdx: isPerfect ? dealerIdx : null,
+      lastCutResult: {
+        cutPos: cutPosition,
+        target: cardsNeeded,
+        dealerName: s.players[dealerIdx].name,
+      },
       version: s.version + 1,
     },
   };
@@ -225,17 +233,35 @@ export function requestBuy(state: GameState, playerId: string): GameState {
 
   // Once contract is met, player may not buy
   if (player.contractMet) return state;
-  // Enforce round-10 single-buy rule
+  // Enforce round-12 (internal 7) single-buy rule
   if (state.round === 7 && player.buysThisRound >= 1) return state;
 
   // Only one buy allowed per discard — first come, first served
   if (state.pendingBuyRequests.length > 0) return state;
+  if (state.discardPile.length === 0) return state;
+
+  // Immediately process the buy so the state is self-consistent.
+  // This avoids a race condition where the current player draws before
+  // receiving the buy request, which would cause the buy to be lost.
+  let s = clone(state) as GameState;
+
+  const topDiscard = s.discardPile[s.discardPile.length - 1];
+  s.discardPile = s.discardPile.slice(0, -1);
+
+  const [penalty, remaining] = drawCards(s.deck, 1);
+  s.deck = remaining;
+
+  s = updatePlayer(s, playerId, (p) => ({
+    ...p,
+    hand: [...p.hand, topDiscard, ...penalty],
+    buysThisRound: p.buysThisRound + 1,
+  })) as GameState;
 
   return {
-    ...state,
-    pendingBuyRequests: [playerId],
+    ...s,
+    pendingBuyRequests: [],  // already resolved
     lastBuyerId: playerId,
-    version: state.version + 1,
+    version: s.version + 1,
   };
 }
 
@@ -609,7 +635,10 @@ function scoreRound(state: GameState): GameState {
       roundScores: [...p.roundScores, penalty],
     };
   });
-  return { ...state, players, phase: 'round_end', perfectCutDealerIdx: null };
+  const perfectCutBonusRounds = perfIdx !== null
+    ? [...state.perfectCutBonusRounds, { round: state.round, playerIdx: perfIdx }]
+    : state.perfectCutBonusRounds;
+  return { ...state, players, phase: 'round_end', perfectCutDealerIdx: null, perfectCutBonusRounds };
 }
 
 // ─── Advance to next round (called by host after round_end scoreboard) ────────

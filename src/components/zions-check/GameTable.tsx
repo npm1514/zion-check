@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Card, GameState, Meld, MeldType } from '@/types/game';
 import { cn } from '@/lib/utils';
 import { CardTile } from './CardTile';
@@ -117,6 +117,7 @@ export function GameTable({
   const [showVoicePicker,   setShowVoicePicker]   = useState(false);
   const [availableVoices,   setAvailableVoices]   = useState<SpeechSynthesisVoice[]>([]);
   const [selectedVoiceName, setSelectedVoiceName] = useState<string>('');
+  const [cutResultBanner,   setCutResultBanner]   = useState<{ cutPos: number; target: number; dealerName: string } | null>(null);
 
   // Load voices (Chrome loads them async)
   useEffect(() => {
@@ -130,12 +131,10 @@ export function GameTable({
     return () => window.speechSynthesis.removeEventListener('voiceschanged', load);
   }, []);
 
-  // ── Buy announcement — shown while lastBuyerId is set, cleared when buy resolves ──
   const buyAnnouncement = state.lastBuyerId
     ? { playerId: state.lastBuyerId, name: state.players.find((p) => p.id === state.lastBuyerId)?.name ?? '' }
     : null;
 
-  // ── "BUY" audio — speak the word whenever someone requests a buy ──────────
   useEffect(() => {
     if (!state.lastBuyerId) return;
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
@@ -150,6 +149,17 @@ export function GameTable({
     }
     window.speechSynthesis.speak(utt);
   }, [state.lastBuyerId, selectedVoiceName]);
+
+  // ── Cut result banner — show for 8 s after dealing starts ────────────────
+  const prevPhaseRef = useRef<string>('');
+  useEffect(() => {
+    if (prevPhaseRef.current === 'cutting' && state.phase === 'draw' && state.lastCutResult) {
+      setCutResultBanner(state.lastCutResult);
+      const t = setTimeout(() => setCutResultBanner(null), 8000);
+      return () => clearTimeout(t);
+    }
+    prevPhaseRef.current = state.phase;
+  }, [state.phase, state.lastCutResult]);
 
   // ── Meld builder state ────────────────────────────────────────────────────
 
@@ -287,22 +297,50 @@ export function GameTable({
                       <span className="text-[10px] text-gray-400 ml-1">(you)</span>
                     )}
                   </td>
-                  {player.roundScores.map((score, ri) => (
-                    <td
-                      key={ri}
-                      className={cn(
-                        'text-center py-2 text-xs',
-                        ri === state.round - 1 ? 'font-bold text-gray-900' : 'text-gray-400',
-                      )}
-                    >
-                      {score}
-                    </td>
-                  ))}
+                  {player.roundScores.map((score, ri) => {
+                    const roundNum = ri + 1;
+                    const playerIdx = state.players.findIndex(p => p.id === player.id);
+                    const hasPerfectCut = state.perfectCutBonusRounds.some(
+                      b => b.round === roundNum && b.playerIdx === playerIdx
+                    );
+                    return (
+                      <td
+                        key={ri}
+                        className={cn(
+                          'text-center py-2 text-xs',
+                          ri === state.round - 1 ? 'font-bold text-gray-900' : 'text-gray-400',
+                        )}
+                      >
+                        {hasPerfectCut ? (
+                          <span title="Perfect cut! −25 pts bonus">
+                            {score}<span className="text-[9px] ml-0.5">✨</span>
+                          </span>
+                        ) : score}
+                      </td>
+                    );
+                  })}
                   <td className="text-right py-2 pr-1 font-bold">{totalScore(player)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+
+          {/* Cut result reminder */}
+          {state.lastCutResult && (() => {
+            const { cutPos, target, dealerName } = state.lastCutResult;
+            const diff    = cutPos - target;
+            const perfect = diff === 0;
+            const absDiff = Math.abs(diff);
+            const dir     = diff > 0 ? 'too many' : 'too few';
+            return (
+              <div className={`mb-4 rounded-xl px-4 py-2.5 text-sm ${perfect ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-gray-50 text-gray-600 border border-gray-200'}`}>
+                {perfect
+                  ? <><span className="font-bold">✨ {dealerName}</span> cut perfectly — <span className="font-bold text-green-700">−25 pts!</span></>
+                  : <><span className="font-bold">{dealerName}</span> cut <span className="font-bold">{absDiff}</span> card{absDiff !== 1 ? 's' : ''} {dir}</>
+                }
+              </div>
+            );
+          })()}
 
           {isHost ? (
             <button
@@ -316,6 +354,15 @@ export function GameTable({
               Waiting for the host to deal round {nextRoundNum}…
             </p>
           )}
+
+          <a
+            href="/rules"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block mt-3 text-sm text-green-700 hover:text-green-600 font-medium underline underline-offset-2"
+          >
+            📖 How to play ↗
+          </a>
         </div>
       </div>
     );
@@ -576,14 +623,14 @@ export function GameTable({
               </span>
 
               {/* Buy button — shown to non-active players during buy window (not if contract already met or someone already bought) */}
-              {state.phase === 'buy_window' && !isMyTurn && topDiscard && state.lastDiscardedById !== myId && !me.contractMet && state.pendingBuyRequests.length === 0 && (() => {
+              {state.phase === 'buy_window' && !isMyTurn && topDiscard && state.lastDiscardedById !== myId && !me.contractMet && state.lastBuyerId === null && (() => {
                 const maxBuy = state.round === 7 && (me?.buysThisRound ?? 0) >= 1;
                 return maxBuy ? (
                   <span className="text-[10px] text-gray-500 mt-1">Max buys used</span>
                 ) : (
                   <button
                     onClick={onBuy}
-                    className="mt-1 px-3 py-1 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold rounded-lg"
+                    className="mt-1 px-3 py-1 bg-amber-500 hover:bg-amber-400 text-black text-md font-bold rounded-lg"
                   >
                     Buy!
                   </button>
@@ -591,10 +638,9 @@ export function GameTable({
               })()}
             </div>
 
-            {/* BUY! announcement — beside the card */}
             {buyAnnouncement && (
               <div className="flex flex-col items-center gap-1 animate-pulse">
-                <span className="text-2xl font-black text-red-400 drop-shadow-lg">BUY!</span>
+                <span className="text-3xl font-black text-red-400 drop-shadow-lg">BUY!</span>
                 <span className="text-xs text-red-300 font-bold">{buyAnnouncement.name}</span>
               </div>
             )}
@@ -747,6 +793,50 @@ export function GameTable({
           onClearDiscard={() => setSelectedForDiscard(null)}
         />
       </div>
+
+      {/* ── Cut result banner ────────────────────────────────────────────────── */}
+      {cutResultBanner && (() => {
+        const diff = cutResultBanner.cutPos - cutResultBanner.target;
+        const perfect = diff === 0;
+        const absDiff = Math.abs(diff);
+        const direction = diff > 0 ? 'too many' : 'too few';
+        const closeEnough = absDiff <= 3;
+
+        return (
+          <div
+            className="absolute top-16 left-1/2 -translate-x-1/2 z-40 cursor-pointer"
+            onClick={() => setCutResultBanner(null)}
+          >
+            <div
+              className="rounded-2xl shadow-2xl px-6 py-4 text-center min-w-[220px]"
+              style={{
+                background: perfect
+                  ? 'linear-gradient(135deg, #14532d, #166534)'
+                  : 'linear-gradient(135deg, #1e293b, #0f172a)',
+                border: `1px solid ${perfect ? 'rgba(34,197,94,0.5)' : 'rgba(255,255,255,0.12)'}`,
+              }}
+            >
+              <div className="text-2xl mb-1">
+                {perfect ? '✨' : closeEnough ? '🎯' : '🃏'}
+              </div>
+              <div className={`font-black text-base ${perfect ? 'text-green-400' : 'text-white'}`}>
+                {perfect
+                  ? 'Perfect Cut!'
+                  : closeEnough
+                    ? 'So close!'
+                    : 'Not quite'}
+              </div>
+              <div className="text-xs mt-1 text-gray-300">
+                {perfect
+                  ? <><span className="font-bold text-green-300">{cutResultBanner.dealerName}</span> cut exactly right — <span className="font-bold text-green-300">−25 pts!</span></>
+                  : <><span className="font-bold text-white">{cutResultBanner.dealerName}</span> cut <span className="font-bold">{absDiff}</span> card{absDiff !== 1 ? 's' : ''} {direction}</>
+                }
+              </div>
+              <div className="text-[10px] text-gray-600 mt-2">tap to dismiss</div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Scoreboard overlay ────────────────────────────────────────────────── */}
       {showScoreboard && (

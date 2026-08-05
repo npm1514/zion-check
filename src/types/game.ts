@@ -86,6 +86,8 @@ export interface GameState {
   lastDiscardedById: string | null; // player who made the most recent discard (cannot take it back)
   lastBuyerId: string | null;       // player who most recently completed a buy (for announcement)
   perfectCutDealerIdx: number | null; // set when dealer made a perfect cut this round; applied in scoring
+  perfectCutBonusRounds: { round: number; playerIdx: number }[]; // history of all perfect cuts (for scoreboard display)
+  lastCutResult: { cutPos: number; target: number; dealerName: string } | null; // shown briefly after dealing
 }
 
 // ─── Scoring ──────────────────────────────────────────────────────────────────
