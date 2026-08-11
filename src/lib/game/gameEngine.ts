@@ -5,7 +5,7 @@
 
 import { Card, GameState, Meld, MeldType, PlayerState, cardPoints } from '@/types/game';
 import { buildMeld, canDiscard, extendMeld, satisfiesContract } from './meldValidator';
-import { cardsForRound, createShuffledDeck, drawCards } from './deck';
+import { cardsForRound, createShuffledDeck, drawCards, shuffleArray } from './deck';
 import { getContract } from './contracts';
 import { nanoid } from 'nanoid';
 
@@ -30,6 +30,14 @@ function updatePlayer(
 
 function allMeldsOnTable(state: GameState): Meld[] {
   return state.players.flatMap((p) => p.melds);
+}
+
+function ensureDeck(deck: Card[], discardPile: Card[], needed = 1): [Card[], Card[]] {
+  if (deck.length >= needed) return [deck, discardPile];
+  if (discardPile.length <= 1) return [deck, discardPile]; // nothing to reshuffle
+  const topCard = discardPile[discardPile.length - 1];
+  const reshuffled = shuffleArray(discardPile.slice(0, -1));
+  return [[...deck, ...reshuffled], [topCard]];
 }
 
 // ─── Initial state ────────────────────────────────────────────────────────────
@@ -141,22 +149,30 @@ export function submitCut(
   const safePos     = Math.max(cardsNeeded, Math.min(cutPosition, totalDeck));
   const isPerfect   = cutPosition === cardsNeeded;
 
-  // Shuffle a fresh deck, then cut: only use the top `safePos` cards for dealing.
-  let deck = createShuffledDeck(n).slice(0, safePos);
+  // Shuffle a fresh full deck, then cut.
+  // Deal hands from the TOP portion (up to safePos cards).
+  // ALL remaining cards — both leftover from the top portion AND the bottom portion
+  // below the cut — become the draw pile, so the full deck is always available for play.
+  const fullDeck = createShuffledDeck(n);
+  let topPortion = fullDeck.slice(0, safePos);
+  const bottomPortion = fullDeck.slice(safePos);
 
   const s = clone(state) as GameState;
   // First player after dealer
   s.currentPlayerIdx = s.round % n;
 
   for (const player of s.players) {
-    const [hand, remaining] = drawCards(deck, cardCount);
+    const [hand, remaining] = drawCards(topPortion, cardCount);
     player.hand             = hand;
     player.melds            = [];
     player.contractMet      = false;
     player.justLaidContract = false;
     player.buysThisRound    = 0;
-    deck = remaining;
+    topPortion = remaining;
   }
+
+  // Draw pile = leftover top portion + everything below the cut
+  const deck = [...topPortion, ...bottomPortion];
 
   return {
     state: {
@@ -200,6 +216,10 @@ export function resolveBuyWindow(state: GameState): GameState {
         const topDiscard = s.discardPile[s.discardPile.length - 1];
         s.discardPile = s.discardPile.slice(0, -1);
 
+        const [freshDeck2, freshDiscard2] = ensureDeck(s.deck, s.discardPile);
+        s.deck = freshDeck2;
+        s.discardPile = freshDiscard2;
+
         const [penalty, remaining] = drawCards(s.deck, 1);
         s.deck = remaining;
 
@@ -223,6 +243,11 @@ export function resolveBuyWindow(state: GameState): GameState {
 
 // ─── Player requests to buy ───────────────────────────────────────────────────
 
+/**
+ * A non-current player signals they want to buy the top discard.
+ * This only QUEUES the request — the current player must approve or deny it
+ * via approveBuy / denyBuy before any cards change hands.
+ */
 export function requestBuy(state: GameState, playerId: string): GameState {
   const currentPlayer = state.players[state.currentPlayerIdx];
   if (playerId === currentPlayer.id) return state; // current player can't buy
@@ -236,22 +261,44 @@ export function requestBuy(state: GameState, playerId: string): GameState {
   // Enforce round-12 (internal 7) single-buy rule
   if (state.round === 7 && player.buysThisRound >= 1) return state;
 
-  // Only one buy allowed per discard — first come, first served
+  // Only one pending request allowed — first come, first served
   if (state.pendingBuyRequests.length > 0) return state;
   if (state.discardPile.length === 0) return state;
 
-  // Immediately process the buy so the state is self-consistent.
-  // This avoids a race condition where the current player draws before
-  // receiving the buy request, which would cause the buy to be lost.
+  // Queue the request; the current player will approve or deny it
+  return {
+    ...state,
+    pendingBuyRequests: [playerId],
+    version: state.version + 1,
+  };
+}
+
+// ─── Current player approves a pending buy request ────────────────────────────
+
+/**
+ * The current player (who is about to draw) allows the pending buy.
+ * The buyer receives the top discard + a penalty card from the deck.
+ * Phase remains buy_window so the current player can still draw/take-discard.
+ */
+export function approveBuy(state: GameState, playerId: string): GameState {
+  if (state.phase !== 'buy_window') return state;
+  if (state.players[state.currentPlayerIdx].id !== playerId) return state;
+  if (state.pendingBuyRequests.length === 0) return state;
+
+  const buyerId = state.pendingBuyRequests[0];
   let s = clone(state) as GameState;
 
   const topDiscard = s.discardPile[s.discardPile.length - 1];
   s.discardPile = s.discardPile.slice(0, -1);
 
+  const [freshDeck, freshDiscard] = ensureDeck(s.deck, s.discardPile);
+  s.deck = freshDeck;
+  s.discardPile = freshDiscard;
+
   const [penalty, remaining] = drawCards(s.deck, 1);
   s.deck = remaining;
 
-  s = updatePlayer(s, playerId, (p) => ({
+  s = updatePlayer(s, buyerId, (p) => ({
     ...p,
     hand: [...p.hand, topDiscard, ...penalty],
     buysThisRound: p.buysThisRound + 1,
@@ -259,9 +306,28 @@ export function requestBuy(state: GameState, playerId: string): GameState {
 
   return {
     ...s,
-    pendingBuyRequests: [],  // already resolved
-    lastBuyerId: playerId,
+    pendingBuyRequests: [],
+    lastBuyerId: buyerId,
     version: s.version + 1,
+  };
+}
+
+// ─── Current player denies a pending buy request ──────────────────────────────
+
+/**
+ * The current player rejects the pending buy request.
+ * No cards change hands; the buy window remains open for the current player
+ * to draw from the deck or take the discard.
+ */
+export function denyBuy(state: GameState, playerId: string): GameState {
+  if (state.phase !== 'buy_window') return state;
+  if (state.players[state.currentPlayerIdx].id !== playerId) return state;
+  if (state.pendingBuyRequests.length === 0) return state;
+
+  return {
+    ...state,
+    pendingBuyRequests: [],
+    version: state.version + 1,
   };
 }
 
@@ -271,11 +337,16 @@ export function drawFromDeck(state: GameState, playerId: string): GameState {
   if (state.phase !== 'draw' && state.phase !== 'buy_window') return state;
   const currentPlayer = state.players[state.currentPlayerIdx];
   if (currentPlayer.id !== playerId) return state;
+  // Block draw while a buy request is awaiting current player's decision
+  if (state.pendingBuyRequests.length > 0) return state;
 
-  // Resolve any pending buys first
-  let s = state.phase === 'buy_window' ? resolveBuyWindow(state) : clone(state);
+  let s = clone(state) as GameState;
 
-  if (s.deck.length === 0) return s; // safety check
+  // Reshuffle discard pile into deck if needed
+  const [freshDeck, freshDiscard] = ensureDeck(s.deck, s.discardPile);
+  s = { ...s, deck: freshDeck, discardPile: freshDiscard };
+
+  if (s.deck.length === 0) return s; // still empty (no discard to reshuffle) — stuck
 
   const [drawn, remaining] = drawCards(s.deck, 1);
 
@@ -303,6 +374,8 @@ export function takeDiscard(state: GameState, playerId: string): GameState {
   const currentPlayer = state.players[state.currentPlayerIdx];
   if (currentPlayer.id !== playerId) return state;
   if (state.discardPile.length === 0) return state;
+  // Block taking the discard while a buy request is awaiting decision
+  if (state.pendingBuyRequests.length > 0) return state;
   // Prevent a player from immediately taking back the card they just discarded
   if (state.lastDiscardedById === playerId) return state;
   // Once contract is met, player may only draw from the deck
@@ -559,9 +632,11 @@ export function discard(
   const newDiscardPile = [...s.discardPile, card];
 
   // ── First-draw reject ───────────────────────────────────────────────────────
-  // If the player discards the very card they just drew, AND the discard pile was
-  // empty (start of round), let others buy it then give the SAME player another draw.
-  if (state.discardPile.length === 0) {
+  // If the player discards the EXACT card they just drew (same id), AND the discard
+  // pile was empty (start of round), let others buy it then give the SAME player
+  // another draw. If they kept the drawn card and are discarding something else,
+  // this is a normal turn-ending discard.
+  if (state.discardPile.length === 0 && cardId === state.lastDrawnId) {
     return {
       state: {
         ...s,

@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { GameState, MeldType, PlayerState } from '@/types/game';
 import {
   advanceToNextRound,
+  approveBuy,
   createInitialState,
+  denyBuy,
   discard,
   drawFromDeck,
   layContract,
@@ -27,6 +29,8 @@ export interface UseGameReturn {
   nextRound:    () => Promise<void>;
   submitCut:    (cutPosition: number) => Promise<void>;
   requestBuy:   () => Promise<void>;
+  approveBuy:   () => Promise<void>;
+  denyBuy:      () => Promise<void>;
   drawFromDeck: () => Promise<void>;
   takeDiscard:  () => Promise<void>;
   layContract:  (melds: { type: MeldType; cardIds: string[] }[]) => Promise<void>;
@@ -224,6 +228,24 @@ export function useGame(
     [apply, myId],
   );
 
+  const approve = useCallback(
+    () => apply((s) => {
+      const newS = approveBuy(s, myId);
+      if (newS === s) return { state: s, error: 'Cannot approve right now' };
+      return { state: newS };
+    }),
+    [apply, myId],
+  );
+
+  const deny = useCallback(
+    () => apply((s) => {
+      const newS = denyBuy(s, myId);
+      if (newS === s) return { state: s, error: 'Cannot deny right now' };
+      return { state: newS };
+    }),
+    [apply, myId],
+  );
+
   const drawDeck = useCallback(
     () => apply((s) => {
       const newS = drawFromDeck(s, myId);
@@ -285,6 +307,8 @@ export function useGame(
     nextRound,
     submitCut:    cutDeck,
     requestBuy:   reqBuy,
+    approveBuy:   approve,
+    denyBuy:      deny,
     drawFromDeck: drawDeck,
     takeDiscard:  takeDisc,
     layContract:  layContr,

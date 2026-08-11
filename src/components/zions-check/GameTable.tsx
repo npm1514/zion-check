@@ -36,6 +36,8 @@ interface GameTableProps {
   onSwapJoker: (meldId: string, slotIndex: number, cardId: string) => void;
   onDiscard: (cardId: string) => void;
   onBuy: () => void;
+  onApproveBuy: () => void;
+  onDenyBuy: () => void;
   onNextRound: () => void;
   onSubmitCut: (cutPosition: number) => void;
   error: string | null;
@@ -55,6 +57,8 @@ export function GameTable({
   onSwapJoker,
   onDiscard,
   onBuy,
+  onApproveBuy,
+  onDenyBuy,
   onNextRound,
   onSubmitCut,
   error,
@@ -154,6 +158,7 @@ export function GameTable({
   const prevPhaseRef = useRef<string>('');
   useEffect(() => {
     if (prevPhaseRef.current === 'cutting' && state.phase === 'draw' && state.lastCutResult) {
+      prevPhaseRef.current = state.phase; // update BEFORE returning so re-broadcasts don't re-trigger
       setCutResultBanner(state.lastCutResult);
       const t = setTimeout(() => setCutResultBanner(null), 8000);
       return () => clearTimeout(t);
@@ -622,11 +627,40 @@ export function GameTable({
                 {canTakeDiscard ? 'TAKE' : 'DISCARD'}
               </span>
 
-              {/* Buy button — shown to non-active players during buy window (not if contract already met or someone already bought) */}
-              {state.phase === 'buy_window' && !isMyTurn && topDiscard && state.lastDiscardedById !== myId && !me.contractMet && state.lastBuyerId === null && (() => {
+              {/* Approve / Deny — shown to the current player when someone has requested a buy */}
+              {state.phase === 'buy_window' && isMyTurn && state.pendingBuyRequests.length > 0 && (() => {
+                const buyerName = state.players.find((p) => p.id === state.pendingBuyRequests[0])?.name ?? 'Someone';
+                return (
+                  <div className="mt-2 flex flex-col items-center gap-1.5">
+                    <span className="text-xs text-amber-300 font-bold text-center leading-tight">
+                      {buyerName} wants to buy
+                    </span>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={onApproveBuy}
+                        className="px-3 py-1 bg-green-500 hover:bg-green-400 text-white text-xs font-bold rounded-lg"
+                      >
+                        ✓ Allow
+                      </button>
+                      <button
+                        onClick={onDenyBuy}
+                        className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-lg"
+                      >
+                        ✗ Deny
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Buy button — shown to non-active players during buy window if no request is pending and nobody has bought yet */}
+              {state.phase === 'buy_window' && !isMyTurn && topDiscard && state.lastDiscardedById !== myId && !me.contractMet && state.pendingBuyRequests.length === 0 && state.lastBuyerId === null && (() => {
                 const maxBuy = state.round === 7 && (me?.buysThisRound ?? 0) >= 1;
+                const alreadyRequested = state.pendingBuyRequests.includes(myId);
                 return maxBuy ? (
                   <span className="text-[10px] text-gray-500 mt-1">Max buys used</span>
+                ) : alreadyRequested ? (
+                  <span className="text-[10px] text-amber-400 mt-1 animate-pulse">Waiting for approval…</span>
                 ) : (
                   <button
                     onClick={onBuy}
@@ -636,6 +670,11 @@ export function GameTable({
                   </button>
                 );
               })()}
+
+              {/* Waiting indicator — shown to the buyer while the current player decides */}
+              {state.phase === 'buy_window' && !isMyTurn && state.pendingBuyRequests[0] === myId && (
+                <span className="text-[10px] text-amber-400 mt-1 animate-pulse">Waiting for approval…</span>
+              )}
             </div>
 
             {buyAnnouncement && (
@@ -804,11 +843,11 @@ export function GameTable({
 
         return (
           <div
-            className="absolute top-16 left-1/2 -translate-x-1/2 z-40 cursor-pointer"
-            onClick={() => setCutResultBanner(null)}
+            className="absolute top-16 left-1/2 -translate-x-1/2 z-40 pointer-events-none"
           >
             <div
-              className="rounded-2xl shadow-2xl px-6 py-4 text-center min-w-[220px]"
+              className="rounded-2xl shadow-2xl px-6 py-4 text-center min-w-[220px] cursor-pointer pointer-events-auto"
+              onClick={() => setCutResultBanner(null)}
               style={{
                 background: perfect
                   ? 'linear-gradient(135deg, #14532d, #166534)'

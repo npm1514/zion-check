@@ -165,6 +165,8 @@ function GameRoom({ code, myId, myName, isHost }: GameRoomProps) {
       onSwapJoker={game.swapJoker}
       onDiscard={game.discard}
       onBuy={game.requestBuy}
+      onApproveBuy={game.approveBuy}
+      onDenyBuy={game.denyBuy}
       onNextRound={game.nextRound}
       onSubmitCut={game.submitCut}
       error={game.error}
