@@ -4,7 +4,7 @@
  */
 
 import { Card, GameState, Meld, MeldType, PlayerState, cardPoints } from '@/types/game';
-import { buildMeld, canDiscard, extendMeld, satisfiesContract } from './meldValidator';
+import { buildMeld, canDiscard, extendMeld, satisfiesContract, type RunEnd } from './meldValidator';
 import { cardsForRound, createShuffledDeck, drawCards, shuffleArray } from './deck';
 import { getContract } from './contracts';
 import { nanoid } from 'nanoid';
@@ -447,6 +447,7 @@ export function layToMeld(
   playerId: string,
   meldId: string,
   cardId: string,
+  end?: RunEnd,
 ): { state: GameState; error?: string } {
   if (state.phase !== 'action') return { state, error: 'Not in action phase' };
 
@@ -472,7 +473,7 @@ export function layToMeld(
   if (!card) return { state, error: 'Card not in hand' };
 
   const targetMeld = state.players[meldOwnerIdx].melds[meldIdx];
-  const updated = extendMeld(targetMeld, card);
+  const updated = extendMeld(targetMeld, card, end);
   if (!updated) return { state, error: 'Card cannot extend that meld' };
 
   // Remove card from hand, update meld
@@ -540,21 +541,32 @@ export function swapJoker(
   const jokerCard = slot.card;
 
   // Replace joker in meld with the real card
+  const updatedMelds = (p: typeof state.players[0]) =>
+    p.melds.map((m, mi) => mi === meldIdx ? {
+      ...m,
+      slots: m.slots.map((sl, si) => si === slotIndex
+        ? { card, substituting: undefined }
+        : sl,
+      ),
+    } : m);
+
   const newPlayers = state.players.map((p, pi) => {
-    if (pi === meldOwnerIdx) {
+    const isMeldOwner = pi === meldOwnerIdx;
+    const isSwapper   = p.id === playerId;
+
+    if (isMeldOwner && isSwapper) {
+      // Swapping a joker from your own meld — update both melds and hand
       return {
         ...p,
-        melds: p.melds.map((m, mi) => mi === meldIdx ? {
-          ...m,
-          slots: m.slots.map((sl, si) => si === slotIndex
-            ? { card, substituting: undefined }
-            : sl,
-          ),
-        } : m),
+        melds: updatedMelds(p),
+        hand: [...p.hand.filter((c) => c.id !== cardId), jokerCard],
       };
     }
-    // Give joker to swapping player, remove their real card
-    if (p.id === playerId) {
+    if (isMeldOwner) {
+      return { ...p, melds: updatedMelds(p) };
+    }
+    if (isSwapper) {
+      // Give joker to swapping player, remove their real card
       return {
         ...p,
         hand: [...p.hand.filter((c) => c.id !== cardId), jokerCard],

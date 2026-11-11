@@ -14,7 +14,6 @@ interface HandProps {
   pendingMeldTarget: boolean;             // waiting to extend a table meld
   onCardClick: (cardId: string) => void;
   onDiscard: () => void;
-  onClearDiscard: () => void;
 }
 
 // ── Fan style per card ────────────────────────────────────────────────────────
@@ -51,7 +50,6 @@ export function Hand({
   pendingMeldTarget,
   onCardClick,
   onDiscard,
-  onClearDiscard,
 }: HandProps) {
 
   // ── Card order ──────────────────────────────────────────────────────────────
@@ -123,48 +121,43 @@ export function Hand({
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col gap-2 select-none">
+    <div className="relative select-none">
 
-      {/* Status hints */}
-      <div className="flex items-center justify-between px-1 h-5">
-        {activeSlotIdx !== null && (
-          <p className="text-yellow-300 text-xs font-semibold animate-pulse">
-            ← Tap a card to add it to the highlighted slot
-          </p>
-        )}
-        {pendingMeldTarget && (
-          <p className="text-orange-300 text-xs font-semibold">
-            ← Tap a card to add it to the table meld
-          </p>
-        )}
+      {/* Hints and the Discard button float over the hand area so showing
+          them never pushes the layout around. Tap the selected card again to
+          unselect it. */}
+      <div className="absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-3 px-4 pt-1 pointer-events-none">
+        <div>
+          {activeSlotIdx !== null && (
+            <p className="text-yellow-300 text-xs font-semibold animate-pulse">
+              ← Tap a card to add it to the highlighted slot
+            </p>
+          )}
+          {pendingMeldTarget && (
+            <p className="text-orange-300 text-xs font-semibold">
+              ← Tap a card to add it to the table meld
+            </p>
+          )}
+        </div>
         {selectedForDiscard && (
-          <div className="flex items-center gap-2 ml-auto">
-            <button
-              onClick={onDiscard}
-              className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-lg"
-            >
-              Discard
-            </button>
-            <button
-              onClick={onClearDiscard}
-              className="px-2 py-1 bg-gray-700 text-gray-300 text-xs rounded-lg"
-            >
-              ✕
-            </button>
-          </div>
-        )}
-        {activeSlotIdx === null && !pendingMeldTarget && !selectedForDiscard && (
-          <p className="text-gray-500 text-xs">
-            {canAct ? 'Click card to select · Drag to rearrange' : 'Drag to rearrange'}
-          </p>
+          <button
+            onClick={onDiscard}
+            className="pointer-events-auto px-4 py-1.5 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-lg shadow-lg shrink-0"
+          >
+            Discard
+          </button>
         )}
       </div>
 
       {/* Fan */}
       <div
         className={cn(
-          'flex items-end justify-center px-8 pb-2',
-          'min-h-[130px]',
+          // pt-12 reserves room above the cards for everything that can rise:
+          // a selected card's lift (28px here + 12px in CardTile) plus the fan
+          // tilt on the outer cards (~5px), and the floating Discard button.
+          // Padding, not min-height, so cards can never start at the top edge
+          // and spill into the section above.
+          'flex items-end justify-center px-8 pt-12 pb-2',
           // glow the whole hand area when a slot is active
           activeSlotIdx !== null && 'drop-shadow-[0_0_12px_rgba(250,204,21,0.3)]',
           pendingMeldTarget       && 'drop-shadow-[0_0_12px_rgba(249,115,22,0.3)]',
@@ -208,12 +201,6 @@ export function Hand({
           <p className="text-gray-600 text-sm self-center">No cards in hand</p>
         )}
       </div>
-
-      {/* Card count */}
-      <p className="text-center text-gray-500 text-[11px]">
-        {total} card{total !== 1 ? 's' : ''} in hand
-        {stagedIds.size > 0 && ` · ${stagedIds.size} staged`}
-      </p>
     </div>
   );
 }

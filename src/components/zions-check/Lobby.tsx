@@ -1,7 +1,9 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { GameState } from '@/types/game';
+import { cn } from '@/lib/utils';
 
 interface LobbyProps {
   roomCode: string;
@@ -14,15 +16,63 @@ interface LobbyProps {
 export function Lobby({ roomCode, state, myId, onReady, onStart }: LobbyProps) {
   const me = state.players.find((p) => p.id === myId);
   const isHost = state.hostId === myId;
+
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(roomCode);
+    } catch {
+      // Clipboard API is blocked on plain-http pages (e.g. joining over the home network) — fall back.
+      const ta = document.createElement('textarea');
+      ta.value = roomCode;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    setCopied(true);
+  };
+
   return (
     <div className="min-h-screen bg-green-900 flex items-center justify-center p-6">
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
-        <h1 className="text-3xl font-black text-center mb-1">🃏 Zions Check</h1>
+        <h1 className="text-3xl font-black text-center mb-1">Zions Check</h1>
 
         {/* Room code */}
         <div className="bg-gray-100 rounded-xl p-4 text-center mb-6">
           <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Room Code</p>
-          <p className="text-4xl font-mono font-black tracking-widest text-green-700">{roomCode}</p>
+          <div className="relative">
+            <p className="text-4xl font-mono font-black tracking-widest text-green-700">{roomCode}</p>
+            <button
+              type="button"
+              onClick={copyCode}
+              aria-label={copied ? 'Copied' : 'Copy room code'}
+              title={copied ? 'Copied' : 'Copy room code'}
+              className={cn(
+                'absolute right-0 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-colors',
+                copied ? 'text-green-600' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-200',
+              )}
+            >
+              {copied ? (
+                <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+              )}
+            </button>
+          </div>
           <p className="text-xs text-gray-400 mt-1">Share this code with your family</p>
         </div>
 

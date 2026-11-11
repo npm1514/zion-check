@@ -51,7 +51,6 @@ export function CutDeckModal({ round, numPlayers, dealerName, isDealer, onSubmit
           className="rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center"
           style={{ background: 'linear-gradient(160deg, #1a4d2e 0%, #0d3d1f 100%)', border: '1px solid rgba(255,255,255,0.12)' }}
         >
-          <div className="text-4xl mb-3">🃏</div>
           <h2 className="text-xl font-black text-white mb-2">
             {dealerName} is cutting the deck…
           </h2>
@@ -78,7 +77,6 @@ export function CutDeckModal({ round, numPlayers, dealerName, isDealer, onSubmit
       >
         {/* Header */}
         <div className="text-center mb-6">
-          <div className="text-3xl mb-1">🃏</div>
           <h2 className="text-xl font-black text-white">Cut the Deck</h2>
           <p className="text-gray-400 text-sm mt-0.5">
             Round {displayRound} · {numPlayers} players · {cardsForRound(round)} cards each
@@ -166,7 +164,7 @@ export function CutDeckModal({ round, numPlayers, dealerName, isDealer, onSubmit
           className="w-full py-3 font-black text-base rounded-xl shadow-lg transition-colors"
           style={{ background: '#1d4ed8', color: 'white' }}
         >
-          🃏 Cut &amp; Deal
+          Cut &amp; Deal
         </button>
       </div>
     </div>

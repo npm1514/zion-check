@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { GameState, MeldType, PlayerState } from '@/types/game';
+import type { RunEnd } from '@/lib/game/meldValidator';
 import {
   advanceToNextRound,
   createInitialState,
@@ -30,7 +31,7 @@ export interface UseGameReturn {
   drawFromDeck: () => Promise<void>;
   takeDiscard:  () => Promise<void>;
   layContract:  (melds: { type: MeldType; cardIds: string[] }[]) => Promise<void>;
-  layToMeld:    (meldId: string, cardId: string) => Promise<void>;
+  layToMeld:    (meldId: string, cardId: string, end?: RunEnd) => Promise<void>;
   swapJoker:    (meldId: string, slotIndex: number, cardId: string) => Promise<void>;
   discard:      (cardId: string) => Promise<void>;
 }
@@ -249,8 +250,8 @@ const drawDeck = useCallback(
   );
 
   const layMeld = useCallback(
-    (meldId: string, cardId: string) =>
-      apply((s) => layToMeld(s, myId, meldId, cardId)),
+    (meldId: string, cardId: string, end?: RunEnd) =>
+      apply((s) => layToMeld(s, myId, meldId, cardId, end)),
     [apply, myId],
   );
 

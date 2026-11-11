@@ -7,11 +7,14 @@ import { CardTile } from './CardTile';
 import { CutDeckModal } from './CutDeckModal';
 import { Hand } from './Hand';
 import { MeldDisplay } from './MeldDisplay';
-import { OpponentPanel, AVATARS } from './OpponentPanel';
+import { OpponentPanel } from './OpponentPanel';
 import { RoundTracker } from './RoundTracker';
 import { Scoreboard } from './Scoreboard';
 import { getContract } from '@/lib/game/contracts';
-import { canDiscard } from '@/lib/game/meldValidator';
+import { canDiscard, runEndOptions, runEndTargets, type RunEnd } from '@/lib/game/meldValidator';
+
+const SUIT_SYMBOL: Record<string, string> = { hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠' };
+const RED_SUITS = new Set(['hearts', 'diamonds']);
 import { totalScore } from '@/lib/game/gameEngine';
 
 // ── Meld slot (staging area) type ────────────────────────────────────────────
@@ -32,7 +35,7 @@ interface GameTableProps {
   onDrawFromDeck: () => void;
   onTakeDiscard: () => void;
   onLayContract: (melds: { type: MeldType; cardIds: string[] }[]) => void;
-  onLayToMeld: (meldId: string, cardId: string) => void;
+  onLayToMeld: (meldId: string, cardId: string, end?: RunEnd) => void;
   onSwapJoker: (meldId: string, slotIndex: number, cardId: string) => void;
   onDiscard: (cardId: string) => void;
   onBuy: () => void;
@@ -112,6 +115,9 @@ export function GameTable({
   const [showScoreboard,    setShowScoreboard]    = useState(false);
   const [pendingMeldTarget, setPendingMeldTarget] = useState<{ meldId: string } | null>(null);
   const [selectedForDiscard,setSelectedForDiscard]= useState<string | null>(null);
+  const [discardError,      setDiscardError]      = useState<string | null>(null);
+  // A joker waiting for you to pick which end of a run it goes on
+  const [pendingPlacement,  setPendingPlacement]  = useState<{ meldId: string; cardId: string } | null>(null);
   const [showVoicePicker,   setShowVoicePicker]   = useState(false);
   const [availableVoices,   setAvailableVoices]   = useState<SpeechSynthesisVoice[]>([]);
   const [selectedVoiceName, setSelectedVoiceName] = useState<string>('');
@@ -189,6 +195,14 @@ export function GameTable({
     if (!canAct) return;
 
     if (pendingMeldTarget) {
+      const meld = allMelds.find((m) => m.id === pendingMeldTarget.meldId);
+      const card = me.hand.find((c) => c.id === cardId);
+      // A card that fits both ends of a run (i.e. a joker) — ask where it goes
+      if (meld && card && runEndOptions(meld, card).length === 2) {
+        setPendingPlacement({ meldId: meld.id, cardId });
+        setPendingMeldTarget(null);
+        return;
+      }
       onLayToMeld(pendingMeldTarget.meldId, cardId);
       setPendingMeldTarget(null);
       return;
@@ -211,7 +225,7 @@ export function GameTable({
     }
 
     setSelectedForDiscard((prev) => (prev === cardId ? null : cardId));
-  }, [canAct, pendingMeldTarget, activeSlotIdx, me?.contractMet, stagedIds, onLayToMeld]);
+  }, [canAct, pendingMeldTarget, activeSlotIdx, me?.contractMet, me?.hand, allMelds, stagedIds, onLayToMeld]);
 
   // ── Discard ───────────────────────────────────────────────────────────────
 
@@ -220,15 +234,47 @@ export function GameTable({
     const card = me.hand.find((c) => c.id === selectedForDiscard);
     if (!card) return;
     if (!canDiscard(card, allMelds)) {
-      alert(card.isJoker
+      setDiscardError(card.isJoker
         ? 'You cannot discard a Joker.'
         : 'That card can replace a Joker on the table — you must use it.',
       );
       return;
     }
+    setDiscardError(null);
     onDiscard(selectedForDiscard);
     setSelectedForDiscard(null);
   }, [selectedForDiscard, me?.hand, allMelds, onDiscard]);
+
+  // Discard errors are local (not from the game), so clear them after a few seconds.
+  useEffect(() => {
+    if (!discardError) return;
+    const t = setTimeout(() => setDiscardError(null), 4000);
+    return () => clearTimeout(t);
+  }, [discardError]);
+
+  const shownError = discardError ?? error;
+
+  // ── Joker placement choice (which end of a run) ─────────────────────────────
+  const placement = useMemo(() => {
+    if (!pendingPlacement || !canAct) return null;
+    const meld = allMelds.find((m) => m.id === pendingPlacement.meldId);
+    const card = me.hand.find((c) => c.id === pendingPlacement.cardId);
+    if (!meld || !card) return null;
+    const targets = runEndTargets(meld, card);
+    if (!targets.low || !targets.high) return null;
+    return { meld, card, targets: targets as Record<RunEnd, { suit: string; rank: string }> };
+  }, [pendingPlacement, canAct, allMelds, me.hand]);
+
+  // Drop a stale choice (turn ended, card or meld changed)
+  useEffect(() => {
+    if (pendingPlacement && !placement) setPendingPlacement(null);
+  }, [pendingPlacement, placement]);
+
+  const placeJoker = useCallback((end: RunEnd) => {
+    if (!pendingPlacement) return;
+    onLayToMeld(pendingPlacement.meldId, pendingPlacement.cardId, end);
+    setPendingPlacement(null);
+  }, [pendingPlacement, onLayToMeld]);
 
   // ── Lay contract ──────────────────────────────────────────────────────────
 
@@ -340,7 +386,7 @@ export function GameTable({
               onClick={onNextRound}
               className="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-bold text-lg rounded-xl shadow-lg transition-colors"
             >
-              🃏 Deal Round {nextRoundNum} →
+              Deal Round {nextRoundNum} →
             </button>
           ) : (
             <p className="text-gray-400 text-sm animate-pulse">
@@ -406,7 +452,7 @@ export function GameTable({
             ? me.justLaidContract
               ? '✅ Contract laid! Discard a card — you can add to melds next turn'
               : '✓ Contract down — add cards to melds or discard'
-            : '🃏 Lay down if you can, then discard'
+            : 'Lay down if you can, then discard'
     : `⏳ Waiting for ${currentPlayer?.name}…`;
 
   return (
@@ -422,7 +468,7 @@ export function GameTable({
       <header className="shrink-0 bg-black/30 border-b border-white/10">
         <div className="grid grid-cols-3 items-center px-4 py-1.5">
           <div className="flex items-center gap-2">
-            <span className="font-black text-sm">🃏 Zion&apos;s Check</span>
+            <span className="font-black text-sm">Zion&apos;s Check</span>
             <span className="text-xs bg-white/10 px-2 py-0.5 rounded font-mono tracking-widest">
               {roomCode}
             </span>
@@ -484,76 +530,25 @@ export function GameTable({
             </button>
           </div>
         </div>
-
-        {/* Error row — only rendered when there's an error */}
-        {error && (
-          <div className="px-4 pb-1.5 text-center">
-            <span className="text-red-400 text-xs font-semibold">⚠ {error}</span>
-          </div>
-        )}
       </header>
 
       {/* ── All Players Row (includes current user) ──── */}
       <div className="shrink-0 flex gap-2 px-2 pt-2 pb-1 overflow-x-auto">
 
-        {state.players.map((player) => (
+        {state.players.filter((player) => player.id !== myId).map((player) => (
           <div key={player.id} className="flex flex-col gap-1 shrink-0 w-auto min-w-[120px]">
             <OpponentPanel
               player={player}
               isCurrentPlayer={currentPlayer?.id === player.id}
               isDealer={dealer?.id === player.id}
               contractRequirements={contract.requirements}
-              isMe={player.id === myId}
+              isMe={false}
+              swappableByMeld={swappableByMeld}
+              canAddToMeld={canAct && me.contractMet && !me.justLaidContract}
+              pendingMeldId={pendingMeldTarget?.meldId ?? null}
+              onSelectMeld={(meldId) => { setPendingMeldTarget({ meldId }); setSelectedForDiscard(null); }}
+              onSwapJoker={handleSwapJoker}
             />
-
-            {/* Melds below the panel */}
-            {player.melds.length > 0 && (
-              <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
-                {player.melds.map((meld) => {
-                  const swappable = swappableByMeld.get(meld.id);
-                  return (
-                    <div key={meld.id} className="flex items-start gap-1 flex-nowrap">
-                      <div className="flex flex-nowrap gap-0.5">
-                        {meld.slots.map((slot, i) => {
-                          const canSwap = swappable?.has(i);
-                          return (
-                            <div key={i} className="relative">
-                              <CardTile
-                                card={slot.card}
-                                size="sm"
-                                className={cn(canSwap && 'ring-2 ring-green-400 cursor-pointer hover:scale-110 transition-transform')}
-                                onClick={canSwap ? () => handleSwapJoker(meld.id, i) : undefined}
-                              />
-                              {slot.substituting && (
-                                <span className="absolute -bottom-0.5 left-0 right-0 text-center text-[7px] bg-purple-700 text-white rounded leading-none">
-                                  {slot.substituting.rank}
-                                </span>
-                              )}
-                              {canSwap && (
-                                <span className="absolute -top-0.5 -right-0.5 bg-green-500 text-white text-[6px] px-0.5 rounded-full pointer-events-none font-bold">⇄</span>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {canAct && me.contractMet && !me.justLaidContract && (
-                        <button
-                          onClick={() => { setPendingMeldTarget({ meldId: meld.id }); setSelectedForDiscard(null); }}
-                          className={cn(
-                            'text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0 mt-0.5',
-                            pendingMeldTarget?.meldId === meld.id
-                              ? 'bg-yellow-400 text-black'
-                              : 'bg-white/20 hover:bg-white/30 text-white',
-                          )}
-                        >
-                          + Add
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </div>
         ))}
       </div>
@@ -668,7 +663,6 @@ export function GameTable({
               <MeldDisplay
                 key={meld.id}
                 meld={meld}
-                ownerName="You"
                 canExtend={canAct && !me.justLaidContract}
                 onExtend={
                   canAct && !me.justLaidContract
@@ -698,17 +692,60 @@ export function GameTable({
           'flex items-center justify-center gap-2 px-3 py-1.5',
           isMyTurn ? 'bg-yellow-500/20' : 'bg-black/20',
         )}>
-          <span className="text-sm leading-none">{AVATARS[me.seatIndex % AVATARS.length]}</span>
           <span className="text-xs font-bold text-white">{me.name} <span className="text-gray-400 font-normal">(you)</span></span>
           {dealer?.id === myId && <span className="text-[9px] font-bold bg-white/20 px-1.5 py-0.5 rounded text-white">🃏 DEALER</span>}
           {isMyTurn && <span className="text-yellow-300 text-[9px] font-bold animate-pulse">YOUR TURN</span>}
           <span className="text-[10px] text-gray-300">🃏{me.hand.length}</span>
         </div>
 
-        {/* Meld staging — shown below name bar when contract not yet met */}
-        {canAct && !me.contractMet && (
+        {/* Errors — directly under your name, only when there is one */}
+        {shownError && (
+          <div className="px-3 py-1 text-center bg-red-950/40 border-b border-red-500/20">
+            <span className="text-red-400 text-xs font-semibold">⚠ {shownError}</span>
+          </div>
+        )}
+
+        {/* Joker placement — choose which end of the run it goes on */}
+        {placement && (() => {
+          const label = (t: { suit: string; rank: string }) => (
+            <span className={RED_SUITS.has(t.suit) ? 'text-red-600' : 'text-gray-900'}>
+              {t.rank}{SUIT_SYMBOL[t.suit]}
+            </span>
+          );
+          const ranks = placement.meld.slots.map((s) =>
+            s.card.isJoker ? s.substituting?.rank : s.card.rank,
+          );
+          const runText = `${ranks[0]}–${ranks[ranks.length - 1]}`;
+          return (
+            <div className="px-3 py-2 bg-black/30 border-b border-white/10 flex flex-col items-center gap-1.5">
+              <span className="text-[11px] text-gray-300">Where should the Joker go on the {runText} run?</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => placeJoker('low')}
+                  className="px-3 py-1 rounded-lg bg-white text-gray-900 text-xs font-bold shadow hover:bg-yellow-100"
+                >
+                  ◀ 🃏 as {label(placement.targets.low)}
+                </button>
+                <button
+                  onClick={() => placeJoker('high')}
+                  className="px-3 py-1 rounded-lg bg-white text-gray-900 text-xs font-bold shadow hover:bg-yellow-100"
+                >
+                  🃏 as {label(placement.targets.high)} ▶
+                </button>
+                <button
+                  onClick={() => setPendingPlacement(null)}
+                  className="px-2 py-1 rounded-lg bg-white/10 text-gray-300 text-xs hover:bg-white/20"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Meld staging — always shown while contract not yet met */}
+        {!me.contractMet && (state.phase === 'draw' || state.phase === 'buy_window' || state.phase === 'action') && (
           <div className="bg-black/30 border-b border-white/10 px-3 py-2">
-            <p className="text-[11px] text-gray-400 uppercase tracking-wide mb-2">Stage your contract</p>
             <div className="flex gap-2">
               {meldSlots.map((slot, idx) => {
                 const isActive  = activeSlotIdx === idx;
@@ -740,7 +777,7 @@ export function GameTable({
                             : <span className="text-gray-500">{slot.minSize - slotCards.length} left</span>}
                       </span>
                     </div>
-                    <div className="flex gap-1 min-h-[84px] items-start">
+                    <div className="flex gap-0.5 min-h-[56px] items-start">
                       {slotCards.map((card) => (
                         <div
                           key={card.id}
@@ -753,14 +790,14 @@ export function GameTable({
                           title="Click to remove"
                           className="cursor-pointer hover:opacity-70 transition-opacity"
                         >
-                          <CardTile card={card} size="md" />
+                          <CardTile card={card} size="sm" />
                         </div>
                       ))}
                       {Array.from({ length: Math.max(0, slot.minSize - slotCards.length) }).map((_, i) => (
                         <div
                           key={`ph-${i}`}
                           className={cn(
-                            'w-14 h-20 rounded-lg border-2 border-dashed flex items-center justify-center',
+                            'w-10 h-14 rounded-lg border-2 border-dashed flex items-center justify-center',
                             isActive ? 'border-yellow-400/60 bg-yellow-900/10' : 'border-white/10',
                           )}
                         >
@@ -776,15 +813,15 @@ export function GameTable({
             </div>
             <button
               onClick={handleLayContract}
-              disabled={!canLayContract}
+              disabled={!canLayContract || !canAct}
               className={cn(
                 'mt-2 w-full py-2 text-sm font-bold rounded-lg transition-colors',
-                canLayContract
+                canLayContract && canAct
                   ? 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-900/50'
                   : 'bg-white/5 text-gray-600 cursor-default',
               )}
             >
-              {canLayContract ? '✓ Lay Contract Down' : `Fill all ${meldSlots.length} slots first`}
+              {canLayContract && canAct ? '✓ Lay Contract Down' : canLayContract ? 'Wait for your turn' : `Fill all ${meldSlots.length} slots first`}
             </button>
           </div>
         )}
@@ -798,7 +835,6 @@ export function GameTable({
           pendingMeldTarget={!!pendingMeldTarget}
           onCardClick={handleCardClick}
           onDiscard={handleDiscard}
-          onClearDiscard={() => setSelectedForDiscard(null)}
         />
       </div>
 
@@ -824,9 +860,9 @@ export function GameTable({
                 border: `1px solid ${perfect ? 'rgba(34,197,94,0.5)' : 'rgba(255,255,255,0.12)'}`,
               }}
             >
-              <div className="text-2xl mb-1">
-                {perfect ? '✨' : closeEnough ? '🎯' : '🃏'}
-              </div>
+              {(perfect || closeEnough) && (
+                <div className="text-2xl mb-1">{perfect ? '✨' : '🎯'}</div>
+              )}
               <div className={`font-black text-base ${perfect ? 'text-green-400' : 'text-white'}`}>
                 {perfect
                   ? 'Perfect Cut!'

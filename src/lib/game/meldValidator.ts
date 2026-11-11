@@ -157,10 +157,70 @@ export function buildMeld(
 
 // ─── Can a card extend an existing meld? ─────────────────────────────────────
 
+export type RunEnd = 'low' | 'high';
+
+/** The rank a run slot stands for (a joker's substituted rank, or the card's own). */
+function slotRank(slot: MeldSlot): Rank | null {
+  if (slot.card.isJoker) return slot.substituting?.rank ?? null;
+  return slot.card.rank as Rank;
+}
+
+function runSuit(meld: Meld): Suit | null {
+  for (const s of meld.slots) {
+    if (!s.card.isJoker) return s.card.suit as Suit;
+    if (s.substituting) return s.substituting.suit;
+  }
+  return null;
+}
+
+/** Rank just below `r` in a run (2 → A for ace-low); null if nothing fits. */
+function rankBelow(r: Rank): Rank | null {
+  if (r === 'A') return null;
+  if (r === '2') return 'A';
+  return RANK_ORDER[rankIndex(r) - 1];
+}
+
+/** Rank just above `r` in a run (K → A for ace-high); null if nothing fits. */
+function rankAbove(r: Rank): Rank | null {
+  if (r === 'A') return null;
+  return RANK_ORDER[rankIndex(r) + 1];
+}
+
+/**
+ * For each end of a run, the rank a card placed there would stand for —
+ * or null if that end is closed (past an ace) or the card doesn't fit there.
+ */
+export function runEndTargets(meld: Meld, card: Card): Record<RunEnd, { suit: Suit; rank: Rank } | null> {
+  const none = { low: null, high: null };
+  if (meld.type !== 'run' || meld.slots.length === 0) return none;
+
+  const suit  = runSuit(meld);
+  const first = slotRank(meld.slots[0]);
+  const last  = slotRank(meld.slots[meld.slots.length - 1]);
+  if (!suit || !first || !last) return none;
+
+  const used = new Set(meld.slots.map(slotRank));
+  const fits = (rank: Rank | null) => {
+    if (!rank || used.has(rank)) return null; // closed end, or would repeat a rank (A at both ends)
+    if (!card.isJoker && (card.suit !== suit || card.rank !== rank)) return null;
+    return { suit, rank };
+  };
+
+  return { low: fits(rankBelow(first)), high: fits(rankAbove(last)) };
+}
+
+/** Which ends of a run `card` could be added to (empty for sets). */
+export function runEndOptions(meld: Meld, card: Card): RunEnd[] {
+  const t = runEndTargets(meld, card);
+  return (['low', 'high'] as RunEnd[]).filter((e) => t[e]);
+}
+
 /**
  * Returns the updated meld if `card` can legally extend it, otherwise null.
+ * For runs, `end` picks which end the card goes on (needed for jokers, which
+ * can fit either end); existing slots are kept exactly as they are.
  */
-export function extendMeld(meld: Meld, card: Card): Meld | null {
+export function extendMeld(meld: Meld, card: Card, end?: RunEnd): Meld | null {
   const cards = meld.slots.map((s) => s.card);
 
   if (meld.type === 'set') {
@@ -176,12 +236,16 @@ export function extendMeld(meld: Meld, card: Card): Meld | null {
   }
 
   if (meld.type === 'run') {
-    // Try adding to either end of the run
-    const tryLeft = buildMeld(meld.id, meld.ownerId, 'run', [card, ...cards]);
-    if (tryLeft) return tryLeft;
-    const tryRight = buildMeld(meld.id, meld.ownerId, 'run', [...cards, card]);
-    if (tryRight) return tryRight;
-    return null;
+    const targets = runEndTargets(meld, card);
+    const chosen  = end ?? (targets.low ? 'low' : 'high');
+    const target  = targets[chosen];
+    if (!target) return null;
+
+    const slot: MeldSlot = card.isJoker ? { card, substituting: target } : { card };
+    return {
+      ...meld,
+      slots: chosen === 'low' ? [slot, ...meld.slots] : [...meld.slots, slot],
+    };
   }
 
   return null;

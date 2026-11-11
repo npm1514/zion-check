@@ -55,7 +55,6 @@ export default function GameLandingPage() {
     <div className="min-h-screen bg-green-900 flex items-center justify-center p-6">
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm flex flex-col gap-6">
         <div className="text-center">
-          <h1 className="text-4xl font-black mb-1">🃏</h1>
           <h1 className="text-3xl font-black">Zions Check</h1>
         </div>
 

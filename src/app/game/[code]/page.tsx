@@ -58,7 +58,7 @@ export default function GameRoomPage() {
     return (
       <div className="min-h-screen bg-green-900 flex items-center justify-center p-6">
         <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm flex flex-col gap-4 text-center">
-          <h1 className="text-2xl font-black">🃏 Zion&apos;s Check</h1>
+          <h1 className="text-2xl font-black">Zion&apos;s Check</h1>
           <p className="text-gray-500 text-sm">
             Joining room <span className="font-mono font-bold">{code}</span>
           </p>

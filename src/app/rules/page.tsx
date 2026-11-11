@@ -5,7 +5,7 @@ export default function RulesPage() {
     <div className="min-h-screen bg-green-900 p-6">
       <div className="w-full max-w-2xl mx-auto bg-white rounded-2xl shadow-xl p-8">
         <div className="mb-8 flex justify-between items-center">
-          <h1 className="text-3xl font-black">🃏 Zion&apos;s Check Rules</h1>
+          <h1 className="text-3xl font-black">Zion&apos;s Check Rules</h1>
           <Link
             href="/"
             className="px-4 py-2 bg-green-700 text-white rounded-lg hover:bg-green-600 transition-colors text-sm font-medium"
