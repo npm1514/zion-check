@@ -244,89 +244,29 @@ export function resolveBuyWindow(state: GameState): GameState {
 // ─── Player requests to buy ───────────────────────────────────────────────────
 
 /**
- * A non-current player signals they want to buy the top discard.
- * This only QUEUES the request — the current player must approve or deny it
- * via approveBuy / denyBuy before any cards change hands.
+ * A non-current player requests to buy the top discard.
+ * The buy is PENDING until the current player acts:
+ *   - Current player draws from deck  → buy processes (buyer gets discard + penalty)
+ *   - Current player takes the discard → buy denied (they get the card instead)
+ * First come, first served — only one pending request at a time.
  */
 export function requestBuy(state: GameState, playerId: string): GameState {
   const currentPlayer = state.players[state.currentPlayerIdx];
-  if (playerId === currentPlayer.id) return state; // current player can't buy
+  if (playerId === currentPlayer.id) return state;
   if (state.phase !== 'buy_window') return state;
 
   const player = state.players.find((p) => p.id === playerId);
   if (!player) return state;
 
-  // Once contract is met, player may not buy
   if (player.contractMet) return state;
-  // Enforce round-12 (internal 7) single-buy rule
   if (state.round === 7 && player.buysThisRound >= 1) return state;
-
-  // Only one pending request allowed — first come, first served
-  if (state.pendingBuyRequests.length > 0) return state;
+  if (state.pendingBuyRequests.length > 0) return state; // first come, first served
+  if (state.lastBuyerId !== null) return state; // someone already bought this discard
   if (state.discardPile.length === 0) return state;
 
-  // Queue the request; the current player will approve or deny it
   return {
     ...state,
     pendingBuyRequests: [playerId],
-    version: state.version + 1,
-  };
-}
-
-// ─── Current player approves a pending buy request ────────────────────────────
-
-/**
- * The current player (who is about to draw) allows the pending buy.
- * The buyer receives the top discard + a penalty card from the deck.
- * Phase remains buy_window so the current player can still draw/take-discard.
- */
-export function approveBuy(state: GameState, playerId: string): GameState {
-  if (state.phase !== 'buy_window') return state;
-  if (state.players[state.currentPlayerIdx].id !== playerId) return state;
-  if (state.pendingBuyRequests.length === 0) return state;
-
-  const buyerId = state.pendingBuyRequests[0];
-  let s = clone(state) as GameState;
-
-  const topDiscard = s.discardPile[s.discardPile.length - 1];
-  s.discardPile = s.discardPile.slice(0, -1);
-
-  const [freshDeck, freshDiscard] = ensureDeck(s.deck, s.discardPile);
-  s.deck = freshDeck;
-  s.discardPile = freshDiscard;
-
-  const [penalty, remaining] = drawCards(s.deck, 1);
-  s.deck = remaining;
-
-  s = updatePlayer(s, buyerId, (p) => ({
-    ...p,
-    hand: [...p.hand, topDiscard, ...penalty],
-    buysThisRound: p.buysThisRound + 1,
-  })) as GameState;
-
-  return {
-    ...s,
-    pendingBuyRequests: [],
-    lastBuyerId: buyerId,
-    version: s.version + 1,
-  };
-}
-
-// ─── Current player denies a pending buy request ──────────────────────────────
-
-/**
- * The current player rejects the pending buy request.
- * No cards change hands; the buy window remains open for the current player
- * to draw from the deck or take the discard.
- */
-export function denyBuy(state: GameState, playerId: string): GameState {
-  if (state.phase !== 'buy_window') return state;
-  if (state.players[state.currentPlayerIdx].id !== playerId) return state;
-  if (state.pendingBuyRequests.length === 0) return state;
-
-  return {
-    ...state,
-    pendingBuyRequests: [],
     version: state.version + 1,
   };
 }
@@ -337,10 +277,34 @@ export function drawFromDeck(state: GameState, playerId: string): GameState {
   if (state.phase !== 'draw' && state.phase !== 'buy_window') return state;
   const currentPlayer = state.players[state.currentPlayerIdx];
   if (currentPlayer.id !== playerId) return state;
-  // Block draw while a buy request is awaiting current player's decision
-  if (state.pendingBuyRequests.length > 0) return state;
 
   let s = clone(state) as GameState;
+
+  // ── Process pending buy first (current player drawing = implicit approval) ──
+  // The buyer gets the top discard + a penalty card, then the current player draws normally.
+  if (s.pendingBuyRequests.length > 0 && s.discardPile.length > 0) {
+    const buyerId = s.pendingBuyRequests[0];
+    const buyer = s.players.find((p) => p.id === buyerId);
+    if (buyer && !buyer.contractMet && (s.round < 7 || buyer.buysThisRound === 0)) {
+      const topDiscard = s.discardPile[s.discardPile.length - 1];
+      s.discardPile = s.discardPile.slice(0, -1);
+
+      const [fd, fdisc] = ensureDeck(s.deck, s.discardPile);
+      s.deck = fd;
+      s.discardPile = fdisc;
+
+      const [penalty, afterPenalty] = drawCards(s.deck, 1);
+      s.deck = afterPenalty;
+
+      s = updatePlayer(s, buyerId, (p) => ({
+        ...p,
+        hand: [...p.hand, topDiscard, ...penalty],
+        buysThisRound: p.buysThisRound + 1,
+      })) as GameState;
+
+      s = { ...s, pendingBuyRequests: [], lastBuyerId: buyerId };
+    }
+  }
 
   // Reshuffle discard pile into deck if needed
   const [freshDeck, freshDiscard] = ensureDeck(s.deck, s.discardPile);
@@ -374,8 +338,6 @@ export function takeDiscard(state: GameState, playerId: string): GameState {
   const currentPlayer = state.players[state.currentPlayerIdx];
   if (currentPlayer.id !== playerId) return state;
   if (state.discardPile.length === 0) return state;
-  // Block taking the discard while a buy request is awaiting decision
-  if (state.pendingBuyRequests.length > 0) return state;
   // Prevent a player from immediately taking back the card they just discarded
   if (state.lastDiscardedById === playerId) return state;
   // Once contract is met, player may only draw from the deck

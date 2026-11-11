@@ -36,8 +36,6 @@ interface GameTableProps {
   onSwapJoker: (meldId: string, slotIndex: number, cardId: string) => void;
   onDiscard: (cardId: string) => void;
   onBuy: () => void;
-  onApproveBuy: () => void;
-  onDenyBuy: () => void;
   onNextRound: () => void;
   onSubmitCut: (cutPosition: number) => void;
   error: string | null;
@@ -48,7 +46,6 @@ interface GameTableProps {
 export function GameTable({
   state,
   myId,
-  isHost,
   roomCode,
   onDrawFromDeck,
   onTakeDiscard,
@@ -57,15 +54,12 @@ export function GameTable({
   onSwapJoker,
   onDiscard,
   onBuy,
-  onApproveBuy,
-  onDenyBuy,
   onNextRound,
   onSubmitCut,
   error,
 }: GameTableProps) {
 
   const me            = state.players.find((p) => p.id === myId)!;
-  const opponents     = state.players.filter((p) => p.id !== myId);
   const currentPlayer = state.players[state.currentPlayerIdx];
   const isMyTurn      = currentPlayer?.id === myId;
   const contract      = getContract(state.round);
@@ -135,12 +129,18 @@ export function GameTable({
     return () => window.speechSynthesis.removeEventListener('voiceschanged', load);
   }, []);
 
-  const buyAnnouncement = state.lastBuyerId
-    ? { playerId: state.lastBuyerId, name: state.players.find((p) => p.id === state.lastBuyerId)?.name ?? '' }
-    : null;
+  // Show the BUY banner as soon as someone requests a buy (pending), and keep it
+  // while confirmed (lastBuyerId). Sound fires on the pending request so everyone
+  // hears it the moment someone clicks "Buy!" — not after the draw confirms it.
+  const pendingBuyerId = state.pendingBuyRequests[0] ?? null;
+  const buyAnnouncement = (() => {
+    const id = pendingBuyerId ?? state.lastBuyerId;
+    if (!id) return null;
+    return { playerId: id, name: state.players.find((p) => p.id === id)?.name ?? '' };
+  })();
 
   useEffect(() => {
-    if (!state.lastBuyerId) return;
+    if (!pendingBuyerId) return;
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
     window.speechSynthesis.cancel();
     const utt  = new SpeechSynthesisUtterance('BUY');
@@ -152,7 +152,7 @@ export function GameTable({
       if (voice) utt.voice = voice;
     }
     window.speechSynthesis.speak(utt);
-  }, [state.lastBuyerId, selectedVoiceName]);
+  }, [pendingBuyerId, selectedVoiceName]);
 
   // ── Cut result banner — show for 8 s after dealing starts ────────────────
   const prevPhaseRef = useRef<string>('');
@@ -268,6 +268,10 @@ export function GameTable({
     const sorted = [...state.players].sort((a, b) => totalScore(a) - totalScore(b));
     const roundJustPlayed = state.round + 5;   // display label (6–12)
     const nextRoundNum    = state.round + 1 + 5;
+    // Dealer for next round = round % n (since dealer for round R is (R-1) % n)
+    const nextDealerIdx  = state.round % state.players.length;
+    const nextDealer     = state.players[nextDealerIdx];
+    const iAmNextDealer  = nextDealer?.id === myId;
 
     return (
       <div className="h-screen bg-[#0d3d1f] flex items-center justify-center p-6">
@@ -330,33 +334,17 @@ export function GameTable({
             </tbody>
           </table>
 
-          {/* Cut result reminder */}
-          {state.lastCutResult && (() => {
-            const { cutPos, target, dealerName } = state.lastCutResult;
-            const diff    = cutPos - target;
-            const perfect = diff === 0;
-            const absDiff = Math.abs(diff);
-            const dir     = diff > 0 ? 'too many' : 'too few';
-            return (
-              <div className={`mb-4 rounded-xl px-4 py-2.5 text-sm ${perfect ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-gray-50 text-gray-600 border border-gray-200'}`}>
-                {perfect
-                  ? <><span className="font-bold">✨ {dealerName}</span> cut perfectly — <span className="font-bold text-green-700">−25 pts!</span></>
-                  : <><span className="font-bold">{dealerName}</span> cut <span className="font-bold">{absDiff}</span> card{absDiff !== 1 ? 's' : ''} {dir}</>
-                }
-              </div>
-            );
-          })()}
 
-          {isHost ? (
+          {iAmNextDealer ? (
             <button
               onClick={onNextRound}
               className="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-bold text-lg rounded-xl shadow-lg transition-colors"
             >
-              Deal Round {nextRoundNum} →
+              🃏 Deal Round {nextRoundNum} →
             </button>
           ) : (
             <p className="text-gray-400 text-sm animate-pulse">
-              Waiting for the host to deal round {nextRoundNum}…
+              Waiting for {nextDealer?.name} to deal round {nextRoundNum}…
             </p>
           )}
 
@@ -411,14 +399,14 @@ export function GameTable({
           ? '🎴 Draw from the deck to start the round'
           : me.contractMet
             ? '🎴 Your turn — draw from the deck'
-            : '🎴 Your turn — click the deck or take the discard'
+            : 'It\'s your turn. Draw from the deck or Take from the discard pile.'
         : firstDrawPending
-          ? '👀 Keep your draw or discard it to let others buy — then draw again'
+          ? '👀 Discard your draw card for choice. Or keep it and discard another card to begin the game'
           : me.contractMet
             ? me.justLaidContract
               ? '✅ Contract laid! Discard a card — you can add to melds next turn'
               : '✓ Contract down — add cards to melds or discard'
-            : '📋 Your turn — fill your contract slots then lay them down'
+            : '🃏 Lay down if you can, then discard'
     : `⏳ Waiting for ${currentPlayer?.name}…`;
 
   return (
@@ -505,27 +493,27 @@ export function GameTable({
         )}
       </header>
 
-      {/* ── Opponents Row (with their melds below) ──── */}
+      {/* ── All Players Row (includes current user) ──── */}
       <div className="shrink-0 flex gap-2 px-2 pt-2 pb-1 overflow-x-auto">
 
-        {/* Opponents */}
-        {opponents.map((player) => (
-          <div key={player.id} className="flex flex-col gap-1 min-w-[120px] flex-1 max-w-[200px]">
+        {state.players.map((player) => (
+          <div key={player.id} className="flex flex-col gap-1 shrink-0 w-auto min-w-[120px]">
             <OpponentPanel
               player={player}
               isCurrentPlayer={currentPlayer?.id === player.id}
               isDealer={dealer?.id === player.id}
-              contractLabel={contract.label}
+              contractRequirements={contract.requirements}
+              isMe={player.id === myId}
             />
 
-            {/* Their melds below the panel */}
+            {/* Melds below the panel */}
             {player.melds.length > 0 && (
               <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
                 {player.melds.map((meld) => {
                   const swappable = swappableByMeld.get(meld.id);
                   return (
-                    <div key={meld.id} className="flex items-start gap-1 flex-wrap">
-                      <div className="flex flex-wrap gap-0.5">
+                    <div key={meld.id} className="flex items-start gap-1 flex-nowrap">
+                      <div className="flex flex-nowrap gap-0.5">
                         {meld.slots.map((slot, i) => {
                           const canSwap = swappable?.has(i);
                           return (
@@ -627,40 +615,26 @@ export function GameTable({
                 {canTakeDiscard ? 'TAKE' : 'DISCARD'}
               </span>
 
-              {/* Approve / Deny — shown to the current player when someone has requested a buy */}
-              {state.phase === 'buy_window' && isMyTurn && state.pendingBuyRequests.length > 0 && (() => {
-                const buyerName = state.players.find((p) => p.id === state.pendingBuyRequests[0])?.name ?? 'Someone';
-                return (
-                  <div className="mt-2 flex flex-col items-center gap-1.5">
-                    <span className="text-xs text-amber-300 font-bold text-center leading-tight">
-                      {buyerName} wants to buy
-                    </span>
-                    <div className="flex gap-1.5">
-                      <button
-                        onClick={onApproveBuy}
-                        className="px-3 py-1 bg-green-500 hover:bg-green-400 text-white text-xs font-bold rounded-lg"
-                      >
-                        ✓ Allow
-                      </button>
-                      <button
-                        onClick={onDenyBuy}
-                        className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-lg"
-                      >
-                        ✗ Deny
-                      </button>
-                    </div>
-                  </div>
-                );
-              })()}
+              {/* Pending buy notice — shown to current player so they know someone is waiting */}
+              {state.phase === 'buy_window' && isMyTurn && state.pendingBuyRequests.length > 0 && (
+                <div className="mt-2 text-center">
+                  <span className="text-[11px] text-amber-300 font-bold leading-tight">
+                    {state.players.find(p => p.id === state.pendingBuyRequests[0])?.name} wants to buy
+                  </span>
+                  <div className="text-[9px] text-gray-400 mt-0.5">draw from deck to allow · take discard to deny</div>
+                </div>
+              )}
 
-              {/* Buy button — shown to non-active players during buy window if no request is pending and nobody has bought yet */}
+              {/* Waiting notice — shown to the buyer while pending */}
+              {state.phase === 'buy_window' && !isMyTurn && state.pendingBuyRequests[0] === myId && (
+                <span className="text-[10px] text-amber-400 mt-1 animate-pulse block text-center">Waiting…</span>
+              )}
+
+              {/* Buy button — shown to non-active players during buy window (not if contract met or someone already bought) */}
               {state.phase === 'buy_window' && !isMyTurn && topDiscard && state.lastDiscardedById !== myId && !me.contractMet && state.pendingBuyRequests.length === 0 && state.lastBuyerId === null && (() => {
                 const maxBuy = state.round === 7 && (me?.buysThisRound ?? 0) >= 1;
-                const alreadyRequested = state.pendingBuyRequests.includes(myId);
                 return maxBuy ? (
                   <span className="text-[10px] text-gray-500 mt-1">Max buys used</span>
-                ) : alreadyRequested ? (
-                  <span className="text-[10px] text-amber-400 mt-1 animate-pulse">Waiting for approval…</span>
                 ) : (
                   <button
                     onClick={onBuy}
@@ -670,11 +644,6 @@ export function GameTable({
                   </button>
                 );
               })()}
-
-              {/* Waiting indicator — shown to the buyer while the current player decides */}
-              {state.phase === 'buy_window' && !isMyTurn && state.pendingBuyRequests[0] === myId && (
-                <span className="text-[10px] text-amber-400 mt-1 animate-pulse">Waiting for approval…</span>
-              )}
             </div>
 
             {buyAnnouncement && (

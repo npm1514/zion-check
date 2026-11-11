@@ -1,13 +1,14 @@
 'use client';
 
-import { PlayerState } from '@/types/game';
+import { ContractRequirement, PlayerState } from '@/types/game';
 import { cn } from '@/lib/utils';
 
 interface OpponentPanelProps {
   player: PlayerState;
   isCurrentPlayer: boolean;
   isDealer: boolean;
-  contractLabel: string;
+  contractRequirements: ContractRequirement[];
+  isMe?: boolean;
 }
 
 export const PLAYER_COLORS = [
@@ -22,7 +23,7 @@ export const PLAYER_COLORS = [
 
 export const AVATARS = ['🧑', '👩', '👴', '👵', '🧔', '👱', '🧕'];
 
-export function OpponentPanel({ player, isCurrentPlayer, isDealer, contractLabel }: OpponentPanelProps) {
+export function OpponentPanel({ player, isCurrentPlayer, isDealer, contractRequirements, isMe }: OpponentPanelProps) {
   const colorIdx = player.seatIndex % PLAYER_COLORS.length;
   const avatar   = AVATARS[player.seatIndex % AVATARS.length];
 
@@ -42,7 +43,10 @@ export function OpponentPanel({ player, isCurrentPlayer, isDealer, contractLabel
         isCurrentPlayer ? 'bg-yellow-500/20' : 'bg-black/20',
       )}>
         <span className="text-sm leading-none">{avatar}</span>
-        <span className="text-xs font-bold text-white truncate flex-1">{player.name}</span>
+        <span className="text-xs font-bold text-white truncate flex-1">
+          {player.name}
+          {isMe && <span className="text-[9px] text-white/50 font-normal ml-1">(you)</span>}
+        </span>
         {isDealer && <span className="text-[8px] font-bold text-white/70 shrink-0">🃏</span>}
         {isCurrentPlayer && (
           <span className="text-yellow-300 text-[9px] font-bold animate-pulse shrink-0">▶</span>
@@ -50,17 +54,31 @@ export function OpponentPanel({ player, isCurrentPlayer, isDealer, contractLabel
         <span className="text-[10px] text-gray-300 shrink-0">🃏{player.hand.length}</span>
       </div>
 
-      {/* Contract status — text only, cards shown below panel */}
-      <div className="px-2 py-1 min-h-[20px]">
+      {/* Contract status — mini visual slots */}
+      <div className="px-2 py-1.5 flex items-center gap-1 flex-wrap min-h-[24px]">
         {player.contractMet ? (
           <span className="text-[10px] text-green-400 font-bold">✓ Down</span>
         ) : (
-          <span className="text-[10px] text-gray-400 italic leading-tight">
-            {contractLabel}
+          <>
+            {contractRequirements.map((req, i) => (
+              <div key={i} className="flex items-center gap-0.5">
+                {i > 0 && <span className="text-[8px] text-gray-500 mx-0.5">+</span>}
+                <span className="text-[8px] leading-none mr-0.5">
+                  {req.type === 'set' ? '📋' : '➡️'}
+                </span>
+                {Array.from({ length: req.minSize }).map((_, j) => (
+                  <div
+                    key={j}
+                    className="w-3 h-4 rounded-sm"
+                    style={{ border: '1px dashed rgba(156,163,175,0.4)' }}
+                  />
+                ))}
+              </div>
+            ))}
             {player.buysThisRound > 0 && (
-              <span className="text-amber-400 not-italic"> · {player.buysThisRound}B</span>
+              <span className="text-[9px] text-amber-400 ml-1">{player.buysThisRound}B</span>
             )}
-          </span>
+          </>
         )}
       </div>
     </div>

@@ -12,17 +12,20 @@ interface CutDeckModalProps {
 }
 
 export function CutDeckModal({ round, numPlayers, dealerName, isDealer, onSubmit }: CutDeckModalProps) {
-  const totalDeck    = numPlayers <= 4 ? 108 : 162;
+  const deckCount    = numPlayers <= 4 ? 2 : 3;
+  const totalDeck    = deckCount === 2 ? 108 : 162; // 54 cards per deck (52 + 2 jokers)
   const displayRound = round + 5;
+  const deckHeight   = deckCount * 60; // 120px for 2 decks, 180px for 3 decks
 
   const [cutPos, setCutPos] = useState(Math.floor(totalDeck / 2));
   const deckRef = useRef<HTMLDivElement>(null);
 
+  // Vertical cut: top = card 0 (lift nothing), bottom = card totalDeck (lift everything)
   const cutFraction = cutPos / totalDeck; // 0 = top, 1 = bottom
 
-  const deckLines = useMemo(() => Array.from({ length: 40 }), []);
+  // More lines = harder to judge exact position
+  const deckLines = useMemo(() => Array.from({ length: 54 }), []);
 
-  // Convert a pointer Y position within the deck element to a cut position
   const posFromEvent = useCallback((clientY: number) => {
     const el = deckRef.current;
     if (!el) return;
@@ -70,11 +73,11 @@ export function CutDeckModal({ round, numPlayers, dealerName, isDealer, onSubmit
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
       <div
-        className="rounded-2xl shadow-2xl p-6 max-w-sm w-full"
+        className="rounded-2xl shadow-2xl p-6 w-full max-w-md"
         style={{ background: 'linear-gradient(160deg, #1a4d2e 0%, #0d3d1f 100%)', border: '1px solid rgba(255,255,255,0.12)' }}
       >
         {/* Header */}
-        <div className="text-center mb-5">
+        <div className="text-center mb-6">
           <div className="text-3xl mb-1">🃏</div>
           <h2 className="text-xl font-black text-white">Cut the Deck</h2>
           <p className="text-gray-400 text-sm mt-0.5">
@@ -82,68 +85,78 @@ export function CutDeckModal({ round, numPlayers, dealerName, isDealer, onSubmit
           </p>
         </div>
 
-        {/* Deck visual — click or drag to cut */}
-        <div className="flex justify-center mb-5">
-          <div className="flex flex-col items-center gap-1">
+        {/* Deck visual — drag up/down to cut */}
+        <div className="flex flex-col items-center gap-2 mb-6">
+
+          {/* Combined deck: height scales with number of decks */}
+          <div
+            ref={deckRef}
+            className="relative overflow-hidden cursor-row-resize select-none"
+            style={{
+              width: '100%',
+              height: deckHeight,
+              background: '#1a2e1a',
+              borderRadius: 8,
+              border: '1px solid rgba(255,255,255,0.12)',
+              touchAction: 'none',
+              boxShadow: '4px 4px 0 #0a1f0a, 8px 8px 0 #071507',
+            }}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+          >
+            {/* Top (lifted) portion highlight */}
             <div
-              ref={deckRef}
-              className="relative overflow-hidden rounded cursor-pointer select-none"
+              className="absolute top-0 left-0 right-0"
               style={{
-                width: 140,
-                height: 260,
-                background: '#1a2e1a',
-                border: '1px solid rgba(255,255,255,0.1)',
-                touchAction: 'none',
+                height: `${cutFraction * 100}%`,
+                background: 'linear-gradient(180deg, rgba(96,165,250,0.3) 0%, rgba(96,165,250,0.1) 100%)',
               }}
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-            >
-              {/* Top (cut) portion highlight */}
+            />
+
+            {/* Horizontal card-edge lines */}
+            {deckLines.map((_, i) => (
               <div
-                className="absolute top-0 left-0 right-0"
+                key={i}
+                className="absolute left-0 right-0"
                 style={{
-                  height: `${cutFraction * 100}%`,
-                  background: 'linear-gradient(180deg, rgba(96,165,250,0.3) 0%, rgba(96,165,250,0.12) 100%)',
-                  transition: 'height 0ms',
+                  top: `${((i + 0.5) / deckLines.length) * 100}%`,
+                  height: 1,
+                  background: (i + 0.5) / deckLines.length < cutFraction
+                    ? 'rgba(147,197,253,0.45)'
+                    : 'rgba(255,255,255,0.07)',
                 }}
               />
+            ))}
 
-              {/* Card lines */}
-              {deckLines.map((_, i) => (
-                <div
-                  key={i}
-                  className="absolute left-0 right-0"
-                  style={{
-                    top: `${((i + 0.5) / deckLines.length) * 100}%`,
-                    height: 1,
-                    background: (i + 0.5) / deckLines.length < cutFraction
-                      ? 'rgba(147,197,253,0.45)'
-                      : 'rgba(255,255,255,0.1)',
-                  }}
-                />
-              ))}
 
-              {/* Cut line */}
-              <div
-                className="absolute left-0 right-0 z-10"
-                style={{
-                  top: `${cutFraction * 100}%`,
-                  height: 2,
-                  background: '#60a5fa',
-                  boxShadow: '0 0 5px #60a5fa',
-                  transform: 'translateY(-1px)',
-                }}
-              />
+            {/* Horizontal cut line */}
+            <div
+              className="absolute left-0 right-0 z-20"
+              style={{
+                top: `${cutFraction * 100}%`,
+                height: 2,
+                background: '#60a5fa',
+                boxShadow: '0 0 8px #60a5fa, 0 0 2px #fff',
+                transform: 'translateY(-1px)',
+              }}
+            />
 
-              {/* Drag hint — fades after first interaction */}
-              {cutPos === Math.floor(totalDeck / 2) && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <span className="text-white/30 text-xs">drag to cut</span>
-                </div>
-              )}
-            </div>
+            {/* Top/bottom sheen */}
+            <div className="absolute top-0 left-0 right-0 h-3 rounded-t"
+              style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.1) 0%, transparent 100%)' }} />
+            <div className="absolute bottom-0 left-0 right-0 h-3 rounded-b"
+              style={{ background: 'linear-gradient(0deg, rgba(0,0,0,0.3) 0%, transparent 100%)' }} />
 
-            <div className="text-[10px] text-gray-500">{totalDeck} cards total</div>
+            {/* Drag hint */}
+            {cutPos === Math.floor(totalDeck / 2) && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <span className="text-white/25 text-xs tracking-wide">↑ drag to cut ↓</span>
+              </div>
+            )}
+          </div>
+
+          <div className="text-[10px] text-gray-500">
+            {deckCount} decks · {totalDeck} cards total
           </div>
         </div>
 
